@@ -27,3 +27,4 @@ humantime = "2.1"
 md-5 = "0.10"
 regex = "1.10"
 zbus = { version = "4.4", features = ["tokio"] }
+realfft = "3.5"

@@ -477,6 +477,9 @@ impl App {
             MpvEvent::State(s) => {
                 self.playback_state = s;
                 self.visualizer_state.is_playing = s == PlaybackState::Playing;
+                if s != PlaybackState::Playing {
+                    self.visualizer_state.stop_capture();
+                }
                 self.update_mpris();
             }
             MpvEvent::Metadata(m) => {

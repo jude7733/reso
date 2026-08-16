@@ -18,20 +18,28 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
+    let viz_height = if app.config_manager.config.ui.show_visualizer {
+        4
+    } else {
+        0
+    };
+
     // Main layout: Header, Body, Visualizer/Footer
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header & Badges
-            Constraint::Min(12),   // Main Dashboard Body
-            Constraint::Length(4), // Spectrum Visualizer
-            Constraint::Length(1), // Keybinds footer
+            Constraint::Length(3),          // Header & Badges
+            Constraint::Min(12),            // Main Dashboard Body
+            Constraint::Length(viz_height), // Spectrum Visualizer
+            Constraint::Length(1),          // Keybinds footer
         ])
         .split(area);
 
     render_header(f, app, main_chunks[0]);
     render_body(f, app, main_chunks[1]);
-    render_visualizer(f, app, main_chunks[2]);
+    if app.config_manager.config.ui.show_visualizer {
+        render_visualizer(f, app, main_chunks[2]);
+    }
     render_footer(f, app, main_chunks[3]);
 
     // Render Search / Help Modals if active

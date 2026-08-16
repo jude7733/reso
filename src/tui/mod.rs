@@ -2,11 +2,13 @@
 
 pub mod app;
 pub mod cover;
+pub mod spectrum;
 pub mod ui;
 pub mod visualizer;
 
 pub use app::{ActiveTab, App};
 pub use cover::CoverArtManager;
+pub use spectrum::{AudioCapture, SpectrumAnalyzer};
 pub use visualizer::{VisualizerState, VisualizerWidget};
 
 use crate::config::ConfigManager;
@@ -103,6 +105,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::Stop => {
                         let _ = app.mpv_client.stop().await;
                         app.current_station = None;
+                        app.visualizer_state.stop_capture();
                         app.update_mpris();
                     }
                     AppAction::NextStation => {
