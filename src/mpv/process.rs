@@ -54,11 +54,15 @@ impl MpvProcessManager {
         let socket_arg = format!("--input-ipc-server={}", self.socket_path.display());
 
         let child = Command::new("mpv")
+            .arg("--no-config")
             .arg("--idle")
             .arg(&socket_arg)
             .arg("--ao=pipewire,pulse,alsa,")
+            .arg("--vo=null")
+            .arg("--force-window=no")
             .arg("--audio-display=no")
             .arg("--no-video")
+            .arg("--no-osc")
             .arg("--volume=100")
             .arg("--gapless-audio=yes")
             .arg("--force-seekable=no")
