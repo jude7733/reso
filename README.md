@@ -1,4 +1,4 @@
-# ⚡ `reso` — Lossless Audiophile Internet Radio Player & PipeWire Inspector
+# `reso` — Lossless Audiophile Internet Radio Player & PipeWire Inspector
 
 `reso` is a production-grade, highly-featured CLI and TUI internet radio player written in **Rust**, specifically tailored for **Arch Linux**, **PipeWire**, and audiophile USB DACs (such as the **Moondrop CHU II DSP** and UAC2 devices).
 
@@ -9,7 +9,7 @@ without forced software resampling, sample rate degradation, or software DSP tam
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 - **Bit-Perfect Audio Pipeline**: MPV volume is locked to 100% to preserve full 24-bit dynamic range, delegating hardware volume to PipeWire (`wpctl`).
 - **3-Stage Audiophile Inspector (`reso inspect`)**:
@@ -33,7 +33,7 @@ without forced software resampling, sample rate degradation, or software DSP tam
 
 ---
 
-## 🏗 Architecture & Subsystems
+## Architecture & Subsystems
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -53,7 +53,7 @@ without forced software resampling, sample rate degradation, or software DSP tam
 
 ---
 
-## 🚀 Installation & Build on Arch Linux
+## Installation & Build on Arch Linux
 
 ### Prerequisites
 Install system dependencies:
@@ -90,7 +90,7 @@ systemctl --user restart pipewire wireplumber
 
 ---
 
-## 💻 CLI Commands Reference
+## CLI Commands Reference
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
@@ -111,7 +111,7 @@ systemctl --user restart pipewire wireplumber
 
 ---
 
-## ⌨ TUI Interactive Keybindings
+## TUI Interactive Keybindings
 
 When in interactive TUI mode (`reso`):
 
@@ -137,7 +137,7 @@ When in interactive TUI mode (`reso`):
 
 ---
 
-## 🎛 Audiophile Pipeline Diagnostics Example
+## Audiophile Pipeline Diagnostics Example
 
 Run `reso inspect` to verify your bit-perfect chain at any time:
 
@@ -177,7 +177,7 @@ Run `reso inspect` to verify your bit-perfect chain at any time:
 
 ---
 
-## 🖥 Desktop & Waybar Integration
+## Desktop & Waybar Integration
 
 `reso` exposes a full MPRIS2 interface on D-Bus (`org.mpris.MediaPlayer2.reso`).
 
@@ -203,7 +203,7 @@ In `~/.config/waybar/config`:
 
 ---
 
-## 📁 Configuration & File Locations
+## Configuration & File Locations
 
 All user configuration and logs reside in `~/.config/reso/`:
 - `~/.config/reso/config.toml`: General settings, socket path, UI theme, Last.fm credentials.
@@ -213,6 +213,6 @@ All user configuration and logs reside in `~/.config/reso/`:
 
 ---
 
-## 📜 License
+## License
 
 Licensed under the MIT License.

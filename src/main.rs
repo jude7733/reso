@@ -424,7 +424,7 @@ fn handle_volume_command(action: &str) -> Result<()> {
 
 /// Handles `reso daemon`.
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
-    println!("⚡ Launching Reso background daemon (MPV + MPRIS2)...");
+    println!("Launching Reso background daemon (MPV + MPRIS2)...");
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
     mpv_proc.ensure_running().await?;
 

@@ -60,6 +60,18 @@ pub struct MpvClient {
 }
 
 impl MpvClient {
+    /// Creates a disconnected dummy MpvClient for unit testing.
+    pub fn dummy(socket_path: PathBuf) -> Self {
+        let (cmd_tx, _) = mpsc::channel::<String>(1);
+        let (event_tx, _) = broadcast::channel::<MpvEvent>(1);
+        Self {
+            socket_path,
+            cmd_tx,
+            request_counter: Arc::new(AtomicU64::new(0)),
+            event_bus: event_tx,
+        }
+    }
+
     /// Connects to the MPV IPC socket, initiates property observers, and spawns the background event loop.
     pub async fn connect(socket_path: PathBuf) -> Result<(Self, broadcast::Receiver<MpvEvent>)> {
         let stream = UnixStream::connect(&socket_path)

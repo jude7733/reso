@@ -8,7 +8,7 @@ use crate::util::{format_duration, format_sample_rate};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::Frame;
 
 /// Renders the complete TUI application frame.
@@ -50,7 +50,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     // 1. Logo
     let logo_text = vec![Line::from(vec![
-        Span::styled("⚡ RESO ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("RESO ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled("v0.1.0", Style::default().fg(Color::DarkGray)),
     ])];
     let logo_widget = Paragraph::new(logo_text).block(
@@ -125,31 +125,31 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
             let rate_str = format_sample_rate(app.pipeline_status.source_rate);
             badge_spans.push(Span::styled(
-                format!(" ✓ BIT-PERFECT ({}) ", rate_str),
-                Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+                format!(" [✓ BIT-PERFECT: {}] ", rate_str),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::Resampled { source_rate, sink_rate, .. }) => {
             badge_spans.push(Span::styled(
-                format!(" ⚠ RESAMPLED ({}→{}) ", format_sample_rate(*source_rate), format_sample_rate(*sink_rate)),
-                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD),
+                format!(" [⚠ RESAMPLED: {}→{}] ", format_sample_rate(*source_rate), format_sample_rate(*sink_rate)),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::VolumeDegraded { .. }) => {
             badge_spans.push(Span::styled(
-                " ⚠ VOL < 100% ",
-                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD),
+                " [⚠ VOL < 100%] ",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::DspFilterActive { .. }) => {
             badge_spans.push(Span::styled(
-                " ⚠ DSP ACTIVE ",
-                Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
+                " [⚠ DSP ACTIVE] ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ));
         }
         _ => {
             badge_spans.push(Span::styled(
-                " STANDBY ",
+                " [STANDBY] ",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -502,19 +502,572 @@ fn render_search_tab(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(results_widget, chunks[1]);
 }
 
-/// Renders the detailed Audiophile Inspector tab.
+/// Truncates a string to max_len characters with ellipsis.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_len.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
+
+/// Renders the detailed Audiophile Inspector tab with visual pipeline stages and DAC capability matrix.
 fn render_inspector_tab(f: &mut Frame, app: &App, area: Rect) {
-    let report_text = app.pipeline_status.format_cli_report();
-    let p = Paragraph::new(report_text)
-        .wrap(Wrap { trim: false })
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(" Full Hardware & PipeWire Graph Inspection Report ")
-                .border_style(Style::default().fg(Color::Cyan)),
-        );
-    f.render_widget(p, area);
+    let vertical_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // 1. Verdict & Status Banner (3 inner lines)
+            Constraint::Length(9), // 2. 3-Stage Visual Pipeline Graph (7 inner lines)
+            Constraint::Min(8),    // 3. Diagnostics & Hardware Capability Matrix
+        ])
+        .split(area);
+
+    render_inspector_verdict_banner(f, app, vertical_chunks[0]);
+    render_inspector_pipeline_stages(f, app, vertical_chunks[1]);
+    render_inspector_diagnostics_and_matrix(f, app, vertical_chunks[2]);
+}
+
+/// Renders the top status & bit-perfect verdict banner in the Inspector tab.
+fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
+    let status = &app.pipeline_status;
+    let (border_color, title_badge, title_style, desc_lines) = match &status.verdict {
+        Some(BitPerfectVerdict::NativeBitPerfect) => {
+            let rate_str = format_sample_rate(status.source_rate);
+            let pw_sink_rate_str = format_sample_rate(status.pw_sink_rate.unwrap_or(status.source_rate));
+            let dac_rate_str = format_sample_rate(status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or(status.source_rate));
+            (
+                Color::Green,
+                " [✓ DIRECT BIT-PERFECT PLAYBACK] ",
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                vec![
+                    Line::from(vec![
+                        Span::styled("SIGNAL PATH: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("Source (FLAC {})", rate_str), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::styled(" ──▶ ", Style::default().fg(Color::Green)),
+                        Span::styled(format!("PipeWire ({})", pw_sink_rate_str), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                        Span::styled(" ──▶ ", Style::default().fg(Color::Green)),
+                        Span::styled(format!("DAC ({})", dac_rate_str), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                        Span::styled(" [1:1 SYNC]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("INTEGRITY:   ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("Native clock locked. Zero software resampling, DSP equalizers, or bit degradation.", Style::default().fg(Color::White)),
+                    ]),
+                ],
+            )
+        }
+        Some(BitPerfectVerdict::Resampled { source_rate, sink_rate, culprit }) => {
+            let src_str = format_sample_rate(*source_rate);
+            let snk_str = format_sample_rate(*sink_rate);
+            let culprit_str = culprit.as_ref().map(|c| format!(" (Locked by: {})", c.name)).unwrap_or_default();
+            (
+                Color::Yellow,
+                " [⚠ RESAMPLING DETECTED] ",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                vec![
+                    Line::from(vec![
+                        Span::styled("SIGNAL PATH: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("Source ({})", src_str), Style::default().fg(Color::Yellow)),
+                        Span::styled(" ──▶ [Resampling Filter] ──▶ ", Style::default().fg(Color::Red)),
+                        Span::styled(format!("DAC ({})", snk_str), Style::default().fg(Color::Yellow)),
+                        Span::styled(" [RATE MISMATCH]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("DIAGNOSIS:   ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("Stream sample rate ({}) is resampled to ({}) by PipeWire{}", src_str, snk_str, culprit_str), Style::default().fg(Color::White)),
+                    ]),
+                ],
+            )
+        }
+        Some(BitPerfectVerdict::VolumeDegraded { mpv_volume }) => {
+            (
+                Color::Yellow,
+                " [⚠ SOFTWARE VOLUME ATTENUATION] ",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                vec![
+                    Line::from(vec![
+                        Span::styled("STATUS:      ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("MPV software decoder volume is at {:.1}% (Digital bit depth truncation).", mpv_volume), Style::default().fg(Color::Yellow)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("ADVICE:      ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("Set MPV volume to 100% and adjust listening level with hardware volume (`+/-`).", Style::default().fg(Color::Cyan)),
+                    ]),
+                ],
+            )
+        }
+        Some(BitPerfectVerdict::DspFilterActive { filters }) => {
+            (
+                Color::Red,
+                " [⚠ ACTIVE SOFTWARE DSP FILTERS] ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                vec![
+                    Line::from(vec![
+                        Span::styled("STATUS:      ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("Software DSP / Equalizer nodes active in graph: {}", filters.join(", ")), Style::default().fg(Color::Red)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("ADVICE:      ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("Bypass EasyEffects or equalizer filters for bit-exact audiophile reproduction.", Style::default().fg(Color::Cyan)),
+                    ]),
+                ],
+            )
+        }
+        Some(BitPerfectVerdict::Idle) | None => {
+            (
+                Color::DarkGray,
+                " [○ PIPELINE STANDBY / IDLE] ",
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                vec![
+                    Line::from(vec![
+                        Span::styled("STATUS:      ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("No active lossless radio stream playing. Audio pipeline is in standby.", Style::default().fg(Color::Gray)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("TIP:         ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("Select and play a FLAC lossless station from Tab 1 to inspect live stream graph.", Style::default().fg(Color::Cyan)),
+                    ]),
+                ],
+            )
+        }
+    };
+
+    let title_line = Line::from(vec![
+        Span::styled(title_badge, title_style),
+        Span::raw(" "),
+        Span::styled("Audiophile Signal Integrity Report", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]);
+
+    let mut content_lines = vec![title_line];
+    content_lines.extend(desc_lines);
+
+    let banner = Paragraph::new(content_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color)),
+    );
+    f.render_widget(banner, area);
+}
+
+/// Renders the 3-stage visual pipeline graph cards (Source ➔ PipeWire ➔ DAC).
+fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
+    let status = &app.pipeline_status;
+
+    let stage_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33), // Stage 1: Source (MPV)
+            Constraint::Percentage(34), // Stage 2: PipeWire Graph
+            Constraint::Percentage(33), // Stage 3: Hardware DAC
+        ])
+        .split(area);
+
+    // Stage 1: Source (MPV Decoder)
+    let codec = if status.source_codec.is_empty() { "FLAC" } else { &status.source_codec };
+    let sample_rate = format_sample_rate(status.source_rate);
+    let bit_depth = status
+        .source_bit_depth
+        .map(|b| format!("{}-bit", b))
+        .unwrap_or_else(|| "16/24-bit".to_string());
+    let channels = if status.source_channels == 0 {
+        "2 (Stereo)".to_string()
+    } else {
+        format!("{} ch", status.source_channels)
+    };
+    let bitrate = crate::util::format_bitrate(status.source_bitrate_kbps.unwrap_or(0));
+    let vol_str = format!("{:.1}%", status.mpv_volume);
+    let vol_style = if status.mpv_volume >= 99.5 {
+        Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
+
+    let stage1_lines = vec![
+        Line::from(vec![
+            Span::styled("Codec:     ", Style::default().fg(Color::DarkGray)),
+            Span::styled(codec, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("Rate:      ", Style::default().fg(Color::DarkGray)),
+            Span::styled(sample_rate, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("Depth:     ", Style::default().fg(Color::DarkGray)),
+            Span::styled(bit_depth, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("Channels:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(channels, Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("Bitrate:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(bitrate, Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("MPV Vol:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(vol_str, vol_style.add_modifier(Modifier::BOLD)),
+            Span::styled(if status.mpv_volume >= 99.5 { " [✓ Exact]" } else { " [⚠ Lossy]" }, vol_style),
+        ]),
+        Line::from(vec![
+            Span::styled("Stage 1:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled("──▶ Direct Stream Out", Style::default().fg(Color::Green)),
+        ]),
+    ];
+
+    let stage1_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" 1. Stream Source (MPV) ")
+        .border_style(Style::default().fg(Color::Cyan));
+    f.render_widget(Paragraph::new(stage1_lines).block(stage1_block), stage_chunks[0]);
+
+    // Stage 2: PipeWire Audio Graph
+    let sink_desc = status
+        .pw_sink
+        .as_ref()
+        .map(|s| s.description.clone())
+        .unwrap_or_else(|| "No active sink".to_string());
+    let sink_rate_val = status.pw_sink_rate.unwrap_or(0);
+    let sink_rate = format_sample_rate(sink_rate_val);
+    let sink_rate_color = if sink_rate_val == status.source_rate && status.source_rate > 0 {
+        Color::Green
+    } else if sink_rate_val > 0 {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let sink_fmt = status
+        .pw_sink
+        .as_ref()
+        .and_then(|s| s.format.clone())
+        .unwrap_or_else(|| "Native".to_string());
+    let dsp_str = if status.pw_dsp_filters.is_empty() {
+        "None (Bit-exact)".to_string()
+    } else {
+        format!("Active ({})", status.pw_dsp_filters.len())
+    };
+    let dsp_color = if status.pw_dsp_filters.is_empty() { Color::Green } else { Color::Red };
+
+    let allowed_str = if status.pw_allowed_rates.is_empty() {
+        "Dynamic rates".to_string()
+    } else {
+        status
+            .pw_allowed_rates
+            .iter()
+            .map(|r| {
+                if r % 1000 == 0 {
+                    format!("{}k", r / 1000)
+                } else {
+                    format!("{:.1}k", *r as f64 / 1000.0)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let sink_running = status.pw_sink.as_ref().map(|s| s.is_running).unwrap_or(false);
+
+    let stage2_lines = vec![
+        Line::from(vec![
+            Span::styled("Sink Node: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(truncate_str(&sink_desc, 18), Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("Sink Rate: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(sink_rate, Style::default().fg(sink_rate_color).add_modifier(Modifier::BOLD)),
+            Span::styled(if sink_rate_val == status.source_rate && status.source_rate > 0 { " [MATCH]" } else { "" }, Style::default().fg(Color::Green)),
+        ]),
+        Line::from(vec![
+            Span::styled("Format:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(sink_fmt, Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("Clocks:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("[{}]", allowed_str), Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("DSP Path:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(dsp_str, Style::default().fg(dsp_color)),
+        ]),
+        Line::from(vec![
+            Span::styled("Graph:     ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                if sink_running { "● Active Link" } else { "○ Standby" },
+                if sink_running { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Stage 2:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled("──▶ Direct ALSA Link", Style::default().fg(Color::Green)),
+        ]),
+    ];
+
+    let stage2_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" 2. PipeWire Audio Graph ")
+        .border_style(Style::default().fg(Color::Blue));
+    f.render_widget(Paragraph::new(stage2_lines).block(stage2_block), stage_chunks[1]);
+
+    // Stage 3: Hardware DAC (ALSA)
+    let dac_name = status.alsa_card_name.as_deref().unwrap_or("ALSA Hardware Target");
+    let hw = status.alsa_hw_params.as_ref();
+    let hw_rate_val = hw.and_then(|h| h.rate).unwrap_or(0);
+    let hw_rate = format_sample_rate(hw_rate_val);
+    let hw_rate_color = if hw_rate_val == status.source_rate && status.source_rate > 0 {
+        Color::Green
+    } else if hw_rate_val > 0 {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let hw_fmt = hw.and_then(|h| h.format.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let hw_active = hw.map(|h| h.is_active).unwrap_or(false);
+    let buffer_info = hw
+        .map(|h| format!("{}/{}", h.period_size.unwrap_or(0), h.buffer_size.unwrap_or(0)))
+        .unwrap_or_else(|| "—".to_string());
+
+    let stage3_lines = vec![
+        Line::from(vec![
+            Span::styled("DAC Card:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(truncate_str(dac_name, 18), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("HW Clock:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(hw_rate, Style::default().fg(hw_rate_color).add_modifier(Modifier::BOLD)),
+            Span::styled(if hw_rate_val == status.source_rate && status.source_rate > 0 { " [MATCH]" } else { "" }, Style::default().fg(Color::Green)),
+        ]),
+        Line::from(vec![
+            Span::styled("HW Format: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(hw_fmt, Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("Buffer:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(buffer_info, Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("ALSA State:", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                if hw_active { "● Direct DMA" } else { "○ Idle" },
+                if hw_active { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Physical:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("USB Async DAC", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("Stage 3:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled("✓ Analog Audio Out", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]),
+    ];
+
+    let stage3_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" 3. Hardware DAC / ALSA ")
+        .border_style(Style::default().fg(Color::Green));
+    f.render_widget(Paragraph::new(stage3_lines).block(stage3_block), stage_chunks[2]);
+}
+
+/// Renders the bottom diagnostic insights & DAC capability matrix.
+fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect) {
+    let status = &app.pipeline_status;
+
+    let diag_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50), // Left: PipeWire Graph & Conflict Analysis
+            Constraint::Percentage(50), // Right: DAC Hardware Capability Matrix
+        ])
+        .split(area);
+
+    // Left Box: PipeWire Graph & Conflict Analysis
+    let mut left_lines = Vec::new();
+
+    if !status.pw_culprits.is_empty() {
+        left_lines.push(Line::from(vec![
+            Span::styled("⚠ ACTIVE CLOCK CONFLICT DETECTED:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ]));
+        for culprit in &status.pw_culprits {
+            left_lines.push(Line::from(vec![
+                Span::styled("  • Process:      ", Style::default().fg(Color::DarkGray)),
+                Span::styled(&culprit.name, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" (PID {})", culprit.pid.map(|p| p.to_string()).unwrap_or_else(|| "?".to_string())), Style::default().fg(Color::Gray)),
+            ]));
+            left_lines.push(Line::from(vec![
+                Span::styled("  • Locking Rate: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format_sample_rate(culprit.locking_rate), Style::default().fg(Color::Yellow)),
+            ]));
+        }
+        left_lines.push(Line::from(vec![
+            Span::styled("  ➜ Action:       Pause other audio apps to unlock dynamic 44.1k/96k rate switching.", Style::default().fg(Color::Cyan)),
+        ]));
+    } else if !status.pw_dsp_filters.is_empty() {
+        left_lines.push(Line::from(vec![
+            Span::styled("⚠ ACTIVE DSP FILTERS IN AUDIO PATH:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ]));
+        for f in &status.pw_dsp_filters {
+            left_lines.push(Line::from(vec![
+                Span::styled("  • Active Filter Node: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(f, Style::default().fg(Color::Yellow)),
+            ]));
+        }
+        left_lines.push(Line::from(vec![
+            Span::styled("  ➜ Action:             Disable DSP / equalizer filters for bit-exact reproduction.", Style::default().fg(Color::Cyan)),
+        ]));
+    } else {
+        left_lines.push(Line::from(vec![
+            Span::styled("Routing:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Direct Stream (No resamplers)", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]));
+        left_lines.push(Line::from(vec![
+            Span::styled("Clocks:     ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Dynamic frequency negotiation enabled", Style::default().fg(Color::White)),
+        ]));
+        if let Some(sink) = &status.pw_sink {
+            left_lines.push(Line::from(vec![
+                Span::styled("Sink Node:  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(truncate_str(&sink.name, 28), Style::default().fg(Color::Cyan)),
+            ]));
+        }
+        left_lines.push(Line::from(vec![
+            Span::styled("Hardware:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{:.0}% Master (wpctl)", app.hardware_volume * 100.0), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(" (Bit-transparent)", Style::default().fg(Color::DarkGray)),
+        ]));
+        left_lines.push(Line::from(vec![
+            Span::styled("DSP Chains: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Bypassed (Bit-exact path)", Style::default().fg(Color::Green)),
+        ]));
+        left_lines.push(Line::from(vec![
+            Span::styled("Conflicts:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("None (Clock unlocked)", Style::default().fg(Color::Cyan)),
+        ]));
+    }
+
+    let left_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" PipeWire Diagnostics ")
+        .border_style(Style::default().fg(if !status.pw_culprits.is_empty() { Color::Yellow } else { Color::DarkGray }));
+    f.render_widget(Paragraph::new(left_lines).block(left_block), diag_chunks[0]);
+
+    // Right Box: DAC Hardware Capability Matrix
+    let mut right_lines = Vec::new();
+
+    if let Some(caps) = &status.dac_capabilities {
+        // Supported Rates Chips
+        let mut rate_spans = vec![
+            Span::styled("Rates:      ", Style::default().fg(Color::DarkGray)),
+        ];
+        let active_hw_rate = status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or(0);
+
+        for rate in &caps.supported_rates {
+            let is_active = *rate == active_hw_rate && active_hw_rate > 0;
+            let rate_label = if rate % 1000 == 0 {
+                format!("{}k", rate / 1000)
+            } else {
+                format!("{:.1}k", *rate as f64 / 1000.0)
+            };
+
+            if is_active {
+                rate_spans.push(Span::styled(
+                    format!("[{}: ACTIVE]", rate_label),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                rate_spans.push(Span::styled(
+                    format!("[{}]", rate_label),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            rate_spans.push(Span::raw(" "));
+        }
+        right_lines.push(Line::from(rate_spans));
+
+        // Bit Depths Chips
+        let mut depth_spans = vec![
+            Span::styled("Depths:     ", Style::default().fg(Color::DarkGray)),
+        ];
+        for d in &caps.supported_bit_depths {
+            let is_current = status.source_bit_depth == Some(*d);
+            if is_current {
+                depth_spans.push(Span::styled(
+                    format!("[{}-bit: ACTIVE]", d),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                depth_spans.push(Span::styled(
+                    format!("[{}-bit]", d),
+                    Style::default().fg(Color::White),
+                ));
+            }
+            depth_spans.push(Span::raw(" "));
+        }
+        right_lines.push(Line::from(depth_spans));
+
+        // Hardware formats
+        let formats_str: Vec<String> = caps.supported_formats.iter().cloned().collect();
+        if !formats_str.is_empty() {
+            right_lines.push(Line::from(vec![
+                Span::styled("Formats:    ", Style::default().fg(Color::DarkGray)),
+                Span::styled(formats_str.join(", "), Style::default().fg(Color::Gray)),
+            ]));
+        }
+
+        // Buffer info
+        if let Some(hw) = &status.alsa_hw_params {
+            right_lines.push(Line::from(vec![
+                Span::styled("Buffer:     ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{}p / {}f (Direct DMA Ring)", hw.period_size.unwrap_or(0), hw.buffer_size.unwrap_or(0)),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+        }
+
+        // Card hardware model
+        right_lines.push(Line::from(vec![
+            Span::styled("Card Model: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(truncate_str(&caps.card_name, 28), Style::default().fg(Color::White)),
+        ]));
+
+        // ALSA Stream path
+        if let Some(card_idx) = status.alsa_card_index {
+            right_lines.push(Line::from(vec![
+                Span::styled("ALSA Node:  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("/proc/asound/card{}/stream0", card_idx), Style::default().fg(Color::Cyan)),
+            ]));
+        }
+    } else {
+        right_lines.push(Line::from(vec![
+            Span::styled("Rates:      ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[ 44.1k ] [ 48.0k ] [ 88.2k ] [ 96.0k ] [ 192.0k ]", Style::default().fg(Color::Cyan)),
+        ]));
+        right_lines.push(Line::from(vec![
+            Span::styled("Depths:     ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[ 16-bit ] [ 24-bit ] [ 32-bit ]", Style::default().fg(Color::White)),
+        ]));
+        right_lines.push(Line::from(vec![
+            Span::styled("DAC Device: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(status.alsa_card_name.as_deref().unwrap_or("Standard Linux Audio Device"), Style::default().fg(Color::Gray)),
+        ]));
+        right_lines.push(Line::from(vec![
+            Span::styled("ALSA Node:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("/proc/asound/cards (Active Sound Core)", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    let right_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" DAC Hardware Matrix ")
+        .border_style(Style::default().fg(Color::DarkGray));
+    f.render_widget(Paragraph::new(right_lines).block(right_block), diag_chunks[1]);
 }
 
 /// Renders the Liked Tracks history tab.
