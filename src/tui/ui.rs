@@ -205,8 +205,8 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(42), // Stations List
-                    Constraint::Percentage(58), // Now Playing + Audiophile Inspector
+                    Constraint::Percentage(40), // Stations List
+                    Constraint::Percentage(60), // Now Playing + Compact Audiophile Path
                 ])
                 .split(area);
 
@@ -333,13 +333,16 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-/// Renders the right pane: Now Playing (top) + Audiophile Diagnostics (bottom).
+/// Renders the right pane: Unified Now Playing (music player showcase) + Audiophile Diagnostics.
 fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
+    let diag_height = if area.height >= 20 { 6 } else { 5 };
+    let player_height = area.height.saturating_sub(diag_height).max(8);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10), // Now Playing & Album Art
-            Constraint::Min(8),     // Audio Path Diagram & Diagnostics
+            Constraint::Length(player_height), // Unified Now Playing Card (Hero showcase)
+            Constraint::Length(diag_height),   // Compact Audiophile Audio Path
         ])
         .split(area);
 
@@ -347,27 +350,49 @@ fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
     render_audio_path_diagram(f, app, chunks[1]);
 }
 
-/// Renders the Now Playing card with cover art, metadata, and stream bitrate.
+/// Renders the unified Now Playing card with large cover art, music player typography, and individual format pills.
 fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(20), // Cover Art / Vinyl
-            Constraint::Min(20),    // Track Metadata details
-        ])
-        .split(area);
+    let is_playing = app.playback_state == PlaybackState::Playing;
+    let card_border_color = if is_playing {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
 
-    // Cover Art
-    let cover_block = Block::default()
+    let main_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(" Album Art ")
-        .border_style(Style::default().fg(Color::DarkGray));
-    let cover_inner = cover_block.inner(chunks[0]);
-    f.render_widget(cover_block, chunks[0]);
-    app.cover_art_manager.render(cover_inner, f.buffer_mut());
+        .title(" Now Playing ")
+        .border_style(Style::default().fg(card_border_color));
 
-    // Track Metadata
+    let inner_area = main_block.inner(area);
+    f.render_widget(main_block, area);
+
+    // Terminal characters have ~1:2 width:height ratio, so square image width = inner_height * 2
+    let max_art_width = (inner_area.width * 48) / 100;
+    let square_art_width = (inner_area.height * 2).min(max_art_width).max(8);
+
+    let inner_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(square_art_width), // Direct square Album Art
+            Constraint::Length(2),                // Padding separator
+            Constraint::Min(20),                  // Track details & format pills
+        ])
+        .split(inner_area);
+
+    // Vertically center Cover Art directly into the left side of Now Playing
+    let img_height = square_art_width / 2;
+    let art_y_offset = (inner_chunks[0].height.saturating_sub(img_height)) / 2;
+    let art_area = Rect {
+        x: inner_chunks[0].x,
+        y: inner_chunks[0].y + art_y_offset,
+        width: inner_chunks[0].width,
+        height: img_height.min(inner_chunks[0].height),
+    };
+    app.cover_art_manager.render(art_area, f.buffer_mut());
+
+    // Track Metadata & Music Player Vibe
     let station_name = app
         .current_station
         .as_ref()
@@ -378,80 +403,259 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         app.track_metadata
             .raw_title
             .clone()
-            .unwrap_or_else(|| "Idle".to_string())
+            .unwrap_or_else(|| "No Track Playing".to_string())
     });
 
-    let artist_name = app
-        .track_metadata
-        .artist
-        .clone()
-        .unwrap_or_else(|| "—".to_string());
+    let artist_name = app.track_metadata.artist.clone();
 
     let album_year = match (&app.track_metadata.album, &app.track_metadata.year) {
         (Some(alb), Some(yr)) => format!("{} ({})", alb, yr),
         (Some(alb), None) => alb.clone(),
-        _ => "—".to_string(),
+        _ => String::new(),
     };
 
-    let stream_params = format!(
-        "{} • {} • {} • {}",
-        if app.stream_params.codec.is_empty() {
-            "FLAC"
-        } else {
-            &app.stream_params.codec
-        },
-        format_sample_rate(app.stream_params.sample_rate),
-        app.stream_params
-            .bit_depth
-            .map(|b| format!("{}-bit", b))
-            .unwrap_or_else(|| "16/24-bit".to_string()),
-        crate::util::format_bitrate(app.stream_params.bitrate_kbps.unwrap_or(0)),
+    // Playback State Badge
+    let playback_badge = match app.playback_state {
+        PlaybackState::Playing => Span::styled(
+            " ▶ PLAYING ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        PlaybackState::Paused => Span::styled(
+            " ⏸ PAUSED ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        _ => Span::styled(
+            " ■ STOPPED ",
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ),
+    };
+
+    let is_fav = app
+        .current_station
+        .as_ref()
+        .map(|s| s.favorite)
+        .unwrap_or(false);
+    let fav_span = if is_fav {
+        Span::styled(
+            " ★ FAVORITE ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("")
+    };
+
+    // Bit-Perfect Signal verdict badge
+    let verdict_span = match &app.pipeline_status.verdict {
+        Some(BitPerfectVerdict::NativeBitPerfect) => {
+            let rate_str = format_sample_rate(app.pipeline_status.source_rate);
+            Span::styled(
+                format!(" [✓ BIT-PERFECT: {}] ", rate_str),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
+        Some(BitPerfectVerdict::Resampled {
+            source_rate,
+            sink_rate,
+            ..
+        }) => Span::styled(
+            format!(
+                " [⚠ RESAMPLED: {}→{}] ",
+                format_sample_rate(*source_rate),
+                format_sample_rate(*sink_rate)
+            ),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Some(BitPerfectVerdict::VolumeDegraded { .. }) => Span::styled(
+            " [⚠ VOL < 100%] ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Some(BitPerfectVerdict::DspFilterActive { .. }) => Span::styled(
+            " [⚠ DSP ACTIVE] ",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        _ => Span::styled(" [STANDBY] ", Style::default().fg(Color::DarkGray)),
+    };
+
+    // Individual Format Component Pills
+    let codec_str = if app.stream_params.codec.is_empty() {
+        "FLAC"
+    } else {
+        &app.stream_params.codec
+    };
+    let codec_pill = Span::styled(
+        format!("[{}]", codec_str.to_uppercase()),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     );
 
-    let text = vec![
-        Line::from(vec![
-            Span::styled("Station: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                station_name,
+    let is_hi_res = app.stream_params.sample_rate >= 88200;
+    let rate_color = if is_hi_res {
+        Color::Rgb(255, 140, 255)
+    } else {
+        Color::Rgb(100, 220, 255)
+    };
+    let rate_pill = Span::styled(
+        format!("[{}]", format_sample_rate(app.stream_params.sample_rate)),
+        Style::default().fg(rate_color).add_modifier(Modifier::BOLD),
+    );
+
+    let bit_depth_val = app.stream_params.bit_depth.unwrap_or(16);
+    let depth_str = app
+        .stream_params
+        .bit_depth
+        .map(|b| format!("{}-bit", b))
+        .unwrap_or_else(|| "16-bit".to_string());
+    let depth_pill = Span::styled(
+        format!("[{}]", depth_str),
+        Style::default()
+            .fg(Color::Rgb(255, 215, 100))
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let bitrate_val = app.stream_params.bitrate_kbps.unwrap_or(0);
+    let bitrate_pill = Span::styled(
+        format!("[{}]", crate::util::format_bitrate(bitrate_val)),
+        Style::default().fg(Color::DarkGray),
+    );
+
+    let quality_badge = if is_hi_res || bit_depth_val >= 24 {
+        Some(Span::styled(
+            "[HI-RES LOSSLESS]",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(255, 200, 50))
+                .add_modifier(Modifier::BOLD),
+        ))
+    } else if codec_str.to_uppercase().contains("FLAC") {
+        Some(Span::styled(
+            "[LOSSLESS]",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(50, 200, 120))
+                .add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        None
+    };
+
+    // Assemble Music Player Vibe Content
+    let mut text = Vec::new();
+
+    // Line 1: Header status row
+    let mut header_spans = vec![playback_badge];
+    if is_fav {
+        header_spans.push(Span::raw(" "));
+        header_spans.push(fav_span);
+    }
+    header_spans.push(Span::raw("  "));
+    header_spans.push(verdict_span);
+    text.push(Line::from(header_spans));
+
+    text.push(Line::raw(""));
+
+    // Line 2: Track Title (Hero Element)
+    text.push(Line::from(vec![Span::styled(
+        track_title,
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    // Line 3: Artist (only if present and not empty/placeholder)
+    if let Some(art) = artist_name {
+        if !art.trim().is_empty() && art != "—" && art != "-" {
+            text.push(Line::from(vec![Span::styled(
+                art,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(Color::Rgb(100, 230, 160))
                     .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("Track:   ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                track_title,
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("Artist:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(artist_name, Style::default().fg(Color::Green)),
-        ]),
-        Line::from(vec![
-            Span::styled("Album:   ", Style::default().fg(Color::DarkGray)),
+            )]));
+        }
+    }
+
+    // Line 4: Album & Year (only if present)
+    if !album_year.is_empty() && album_year != "—" {
+        text.push(Line::from(vec![
+            Span::styled("💿 ", Style::default().fg(Color::DarkGray)),
             Span::styled(album_year, Style::default().fg(Color::Gray)),
-        ]),
-        Line::from(vec![
-            Span::styled("Format:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(stream_params, Style::default().fg(Color::Yellow)),
-        ]),
-    ];
+        ]));
+    }
 
-    let meta_widget = Paragraph::new(text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(" Now Playing ")
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-    f.render_widget(meta_widget, chunks[1]);
+    // Line 5: Station Source
+    text.push(Line::from(vec![
+        Span::styled("📻 ", Style::default().fg(Color::Cyan)),
+        Span::styled(
+            station_name,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    text.push(Line::raw(""));
+
+    // Line 6: Format Component Pills (Wrap/split cleanly based on available width to prevent clipping)
+    let meta_width = inner_chunks[2].width as usize;
+    if meta_width >= 46 {
+        let mut format_spans = vec![
+            codec_pill,
+            Span::raw(" "),
+            rate_pill,
+            Span::raw(" "),
+            depth_pill,
+            Span::raw(" "),
+            bitrate_pill,
+        ];
+        if let Some(badge) = quality_badge {
+            format_spans.push(Span::raw(" "));
+            format_spans.push(badge);
+        }
+        text.push(Line::from(format_spans));
+    } else {
+        let mut line1_spans = vec![codec_pill, Span::raw(" "), rate_pill, Span::raw(" "), depth_pill];
+        if let Some(badge) = quality_badge {
+            line1_spans.push(Span::raw(" "));
+            line1_spans.push(badge);
+        }
+        text.push(Line::from(line1_spans));
+        text.push(Line::from(vec![
+            Span::styled("Bitrate: ", Style::default().fg(Color::DarkGray)),
+            bitrate_pill,
+        ]));
+    }
+
+    // Vertically center Text Metadata directly inside the right chunk
+    let num_lines = text.len() as u16;
+    let text_y_offset = (inner_chunks[2].height.saturating_sub(num_lines)) / 2;
+    let text_area = Rect {
+        x: inner_chunks[2].x,
+        y: inner_chunks[2].y + text_y_offset,
+        width: inner_chunks[2].width,
+        height: inner_chunks[2].height.saturating_sub(text_y_offset),
+    };
+    let meta_widget = Paragraph::new(text);
+    f.render_widget(meta_widget, text_area);
 }
 
-/// Renders the 3-stage Audio Path diagram and hardware diagnostics.
+/// Renders the compact 3-stage Audio Path diagram and hardware diagnostics.
 fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.pipeline_status;
 
@@ -506,23 +710,13 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
         ]),
     ];
 
-    // Culprit Warning
-    if let Some(culprit) = status.pw_culprits.first() {
-        lines.push(Line::from(vec![
-            Span::styled(
-                "⚠ Resampling Culprit: ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(&culprit.description, Style::default().fg(Color::Yellow)),
-        ]));
-    }
-
-    // Hardware Volume Bar (wpctl)
+    // Hardware Volume Bar (wpctl) and optional culprit warning
     let vol = app.hardware_volume;
     let vol_bars = (vol * 20.0).round() as usize;
     let bar_str: String =
         "█".repeat(vol_bars.min(20)) + &"░".repeat(20usize.saturating_sub(vol_bars));
-    lines.push(Line::from(vec![
+
+    let mut vol_spans = vec![
         Span::styled(
             "Hardware Vol (wpctl): ",
             Style::default().fg(Color::DarkGray),
@@ -531,11 +725,52 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
             format!("{:.0}% [{}]", vol * 100.0, bar_str),
             Style::default().fg(Color::Cyan),
         ),
-        Span::styled(
-            if app.is_muted { " [MUTED]" } else { "" },
+    ];
+
+    if app.is_muted {
+        vol_spans.push(Span::styled(
+            " [MUTED]",
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        ),
-    ]));
+        ));
+    }
+
+    if let Some(culprit) = status.pw_culprits.first() {
+        vol_spans.push(Span::styled(
+            format!("  [⚠ Culprit: {}]", culprit.description),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    lines.push(Line::from(vol_spans));
+
+    // If bottom pane has extra vertical space (e.g. height >= 7), show signal integrity status
+    if area.height >= 7 {
+        lines.push(Line::raw(""));
+        let (verdict_desc, verdict_color) = match &status.verdict {
+            Some(BitPerfectVerdict::NativeBitPerfect) => (
+                "● Signal Integrity: 1:1 Direct Bit-Perfect. Native hardware clock locked, 0 DSP.",
+                Color::Green,
+            ),
+            Some(BitPerfectVerdict::Resampled { .. }) => (
+                "▲ Signal Integrity: Audio resampled by PipeWire graph to match sink rate.",
+                Color::Yellow,
+            ),
+            Some(BitPerfectVerdict::VolumeDegraded { .. }) => (
+                "▲ Signal Integrity: Digital volume attenuation (<100%). Set hw vol to max for bit-perfect.",
+                Color::Yellow,
+            ),
+            _ => (
+                "● Signal Status: ALSA kernel node active. Press '3' for full Inspector matrix.",
+                Color::DarkGray,
+            ),
+        };
+        lines.push(Line::from(vec![Span::styled(
+            verdict_desc,
+            Style::default().fg(verdict_color),
+        )]));
+    }
 
     let diag_widget = Paragraph::new(lines).block(
         Block::default()
