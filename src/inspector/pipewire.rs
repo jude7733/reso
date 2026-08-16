@@ -88,7 +88,10 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
         // Check PipeWire Core properties for allowed clock rates
         if item_type == "PipeWire:Interface:Core" {
             if let Some(props) = item.get("info").and_then(|i| i.get("props")) {
-                if let Some(rates_str) = props.get("default.clock.allowed-rates").and_then(|r| r.as_str()) {
+                if let Some(rates_str) = props
+                    .get("default.clock.allowed-rates")
+                    .and_then(|r| r.as_str())
+                {
                     report.allowed_clock_rates = parse_allowed_rates(rates_str);
                 }
                 if let Some(def_rate) = props.get("default.clock.rate").and_then(|r| r.as_u64()) {
@@ -106,16 +109,37 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
                 None => continue,
             };
 
-            let state = info.get("state").and_then(|s| s.as_str()).unwrap_or("unknown").to_string();
+            let state = info
+                .get("state")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown")
+                .to_string();
             let is_running = state == "running";
 
             let props = info.get("props");
-            let media_class = props.and_then(|p| p.get("media.class")).and_then(|c| c.as_str()).unwrap_or("");
-            let node_name = props.and_then(|p| p.get("node.name")).and_then(|n| n.as_str()).unwrap_or("");
-            let node_desc = props.and_then(|p| p.get("node.description")).and_then(|d| d.as_str()).unwrap_or(node_name);
-            let app_name = props.and_then(|p| p.get("application.name")).and_then(|a| a.as_str()).unwrap_or("");
-            let binary = props.and_then(|p| p.get("application.process.binary")).and_then(|b| b.as_str()).unwrap_or("");
-            let pid = props.and_then(|p| p.get("application.process.id")).and_then(|pid| pid.as_u64());
+            let media_class = props
+                .and_then(|p| p.get("media.class"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            let node_name = props
+                .and_then(|p| p.get("node.name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            let node_desc = props
+                .and_then(|p| p.get("node.description"))
+                .and_then(|d| d.as_str())
+                .unwrap_or(node_name);
+            let app_name = props
+                .and_then(|p| p.get("application.name"))
+                .and_then(|a| a.as_str())
+                .unwrap_or("");
+            let binary = props
+                .and_then(|p| p.get("application.process.binary"))
+                .and_then(|b| b.as_str())
+                .unwrap_or("");
+            let pid = props
+                .and_then(|p| p.get("application.process.id"))
+                .and_then(|pid| pid.as_u64());
 
             // Extract Format parameter
             let mut rate: Option<u32> = None;
@@ -140,7 +164,10 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
 
             // Fallback rate from props
             if rate.is_none() {
-                if let Some(r) = props.and_then(|p| p.get("audio.rate")).and_then(|r| r.as_u64()) {
+                if let Some(r) = props
+                    .and_then(|p| p.get("audio.rate"))
+                    .and_then(|r| r.as_u64())
+                {
                     rate = Some(r as u32);
                 }
             }
@@ -171,7 +198,11 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
             }
 
             // Audio playback streams
-            if media_class == "Stream/Output/Audio" || (!media_class.contains("Sink") && !media_class.contains("Source") && (!app_name.is_empty() || !binary.is_empty())) {
+            if media_class == "Stream/Output/Audio"
+                || (!media_class.contains("Sink")
+                    && !media_class.contains("Source")
+                    && (!app_name.is_empty() || !binary.is_empty()))
+            {
                 let is_mpv = app_name.to_lowercase().contains("mpv")
                     || binary.to_lowercase().contains("mpv")
                     || node_name.to_lowercase().contains("mpv");
@@ -203,7 +234,10 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
     // Determine active sink (prefer running USB sink, or running sink, or first sink)
     let active_sink = sinks
         .iter()
-        .find(|s| s.is_running && (s.name.contains("usb") || s.name.contains("Chu2") || s.name.contains("DSP")))
+        .find(|s| {
+            s.is_running
+                && (s.name.contains("usb") || s.name.contains("Chu2") || s.name.contains("DSP"))
+        })
         .or_else(|| sinks.iter().find(|s| s.is_running))
         .or_else(|| sinks.first())
         .cloned();
@@ -235,7 +269,10 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
                             description: format!(
                                 "{} (PID {}) is locking PipeWire graph at {}",
                                 name,
-                                stream.pid.map(|p| p.to_string()).unwrap_or_else(|| "?".to_string()),
+                                stream
+                                    .pid
+                                    .map(|p| p.to_string())
+                                    .unwrap_or_else(|| "?".to_string()),
                                 crate::util::format_sample_rate(culprit_rate)
                             ),
                         });

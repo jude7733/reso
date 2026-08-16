@@ -40,7 +40,9 @@ pub struct DacCapabilities {
 pub fn scan_alsa_cards() -> Result<Vec<AlsaCard>> {
     let path = Path::new("/proc/asound/cards");
     if !path.exists() {
-        return Err(ResoError::Alsa("ALSA /proc/asound/cards not found".to_string()));
+        return Err(ResoError::Alsa(
+            "ALSA /proc/asound/cards not found".to_string(),
+        ));
     }
 
     let content = fs::read_to_string(path)?;
@@ -64,7 +66,11 @@ pub fn scan_alsa_cards() -> Result<Vec<AlsaCard>> {
                     let is_usb = desc.contains("USB") || id.contains("DSP");
 
                     let mut full_name = desc;
-                    if i + 1 < lines.len() && !lines[i + 1].trim().starts_with(|c: char| c.is_ascii_digit()) {
+                    if i + 1 < lines.len()
+                        && !lines[i + 1]
+                            .trim()
+                            .starts_with(|c: char| c.is_ascii_digit())
+                    {
                         let next_line = lines[i + 1].trim();
                         if !next_line.is_empty() {
                             full_name = format!("{} ({})", full_name, next_line);
@@ -91,7 +97,10 @@ pub fn scan_alsa_cards() -> Result<Vec<AlsaCard>> {
 pub fn read_hw_params(card_index: u32) -> Result<AlsaHwParams> {
     // Try pcm0p, pcm1p, pcm2p
     for pcm in 0..4 {
-        let path = PathBuf::from(format!("/proc/asound/card{}/pcm{}p/sub0/hw_params", card_index, pcm));
+        let path = PathBuf::from(format!(
+            "/proc/asound/card{}/pcm{}p/sub0/hw_params",
+            card_index, pcm
+        ));
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if content.contains("closed") || content.trim().is_empty() {

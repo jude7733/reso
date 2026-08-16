@@ -79,7 +79,13 @@ impl Widget for VisualizerWidget<'_> {
 
         for x in 0..num_bars {
             let band_idx = (x * self.state.bands.len()) / num_bars;
-            let amp = self.state.bands.get(band_idx).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+            let amp = self
+                .state
+                .bands
+                .get(band_idx)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0);
 
             let total_height = amp * max_height;
             let full_cells = total_height.floor() as u16;

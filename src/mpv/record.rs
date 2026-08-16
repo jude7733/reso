@@ -55,7 +55,10 @@ impl StreamRecorder {
                     .map(sanitize_filename)
                     .unwrap_or_else(|| "Stream".to_string());
 
-                let filename = format!("{}_{}_{}.flac", station_sanitized, timestamp, track_sanitized);
+                let filename = format!(
+                    "{}_{}_{}.flac",
+                    station_sanitized, timestamp, track_sanitized
+                );
                 self.record_dir.join(filename)
             }
         };

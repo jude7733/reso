@@ -48,6 +48,55 @@
 
 ---
 
+## Curated Lossless & Hi-Res Default Catalog
+
+`reso` comes out of the box with over 35+ verified, multi-genre audiophile lossless FLAC and high-fidelity streams:
+
+| ID | Station | Format / Rate | Genre / Description |
+| :--- | :--- | :--- | :--- |
+| `rp-main` | Radio Paradise (Main Mix) | **FLAC** (16-bit / 44.1 kHz) | Eclectic DJ-curated mix |
+| `rp-mellow` | Radio Paradise (Mellow Mix) | **FLAC** (16-bit / 44.1 kHz) | Mellow / Acoustic |
+| `rp-rock` | Radio Paradise (Rock Mix) | **FLAC** (16-bit / 44.1 kHz) | Classic & Alternative Rock |
+| `rp-world` | Radio Paradise (World / Eclectic) | **FLAC** (16-bit / 44.1 kHz) | World & Global Groove |
+| `czech-d-dur` | Czech Radio D-Dur | **FLAC** (24-bit / 48.0 kHz) | Hi-Res Classical (CESNET) |
+| `czech-jazz` | Czech Radio Jazz | **FLAC** (24-bit / 48.0 kHz) | Hi-Res Jazz (CESNET) |
+| `czech-vltava` | Czech Radio Vltava | **FLAC** (24-bit / 48.0 kHz) | Classical, Culture & Arts |
+| `czech-wave` | Czech Radio Wave | **FLAC** (24-bit / 48.0 kHz) | Indie, Alternative & Youth Culture |
+| `sector-space` | Sector Radio (Space) | **FLAC** (16-bit / 44.1 kHz) | Ambient & Space Electronic |
+| `sector-nota` | Sector Radio (Nota) | **FLAC** (16-bit / 44.1 kHz) | Classical Works |
+| `sector-80s` | Sector Radio (Geny) | **FLAC** (16-bit / 44.1 kHz) | 1980s Retro Hits |
+| `sector-10s` | Sector Radio (Zed) | **FLAC** (16-bit / 44.1 kHz) | 2010s Electronic & Pop |
+| `sector-jazz` | Sector Radio (Jazz Hi-Res) | **FLAC** (24-bit / 96.0 kHz) | 96 kHz Audiophile Jazz |
+| `radio-calico` | Radio Calico | **FLAC** (24-bit / 48.0 kHz) | Hi-Res Rock, Pop & Audiophile |
+| `le-bon-mix` | Le Bon Mix | **FLAC** (16-bit / 44.1 kHz) | Eclectic High-Fidelity Broadcast |
+| `blues-flac` | Radio BluesFlac | **FLAC** (16-bit / 44.1 kHz) | Audiophile Blues & Roots |
+| `naim-radio` | Naim Radio | **FLAC** (16-bit / 44.1 kHz) | Naim Audiophile Catalog |
+| `naim-jazz` | Naim Jazz | **FLAC** (16-bit / 44.1 kHz) | Naim Jazz Recordings |
+| `naim-classical` | Naim Classical | **FLAC** (16-bit / 44.1 kHz) | Naim Classical Recordings |
+| `sveriges-p2` | Sveriges Radio P2 | **FLAC** (24-bit / 48.0 kHz) | Swedish Public Classical |
+| `rondo-klasu-pro` | Rondo Klasu Pro | **FLAC** (16-bit / 44.1 kHz) | Finnish Classical Full Works |
+| `smoothjazz-pl` | SmoothJazz.com.pl | **FLAC** (16-bit / 44.1 kHz) | Smooth Jazz & Contemporary |
+| `hionline-pop` | Hi On Line Radio | **FLAC** (16-bit / 44.1 kHz) | Audiophile Pop Masterings |
+| `dance-wave-flac` | Dance Wave | **FLAC** (16-bit / 44.1 kHz) | High-Energy Electronic & Dance |
+| `dance-wave-retro`| Dance Wave Retro | **FLAC** (16-bit / 44.1 kHz) | 90s Eurodance & Oldies |
+| `radio-bias` | Radio Bias | **FLAC** (24-bit / 48.0 kHz) | 80s, New Wave & Italo Disco |
+| `radio-sputnik` | Radio Sputnik | **FLAC** (16-bit / 44.1 kHz) | Underground House & Techno |
+| `sanctuary-electro`| Sanctuary Radio | **FLAC** (16-bit / 44.1 kHz) | Dark Electro & Industrial |
+| `sanctuary-80s` | Sanctuary Radio | **FLAC** (16-bit / 44.1 kHz) | 80s Alternative & New Wave |
+| `pure-lounge` | Pure Lounge Radio | **FLAC** (16-bit / 44.1 kHz) | Downtempo & Lounge |
+| `pure-classix` | PureClassix Radio | **FLAC** (16-bit / 44.1 kHz) | 60s, 70s & 80s Oldies Hits |
+| `fip-paris` | FIP Radio Paris | **AAC** (48.0 kHz HiFi) | French Eclectic & Jazz |
+| `fip-jazz` | FIP Jazz | **AAC** (48.0 kHz HiFi) | All-day Jazz Broadcast |
+| `fip-groove` | FIP Groove | **AAC** (48.0 kHz HiFi) | Funk, Soul, Disco & Groove |
+| `france-musique` | France Musique | **AAC** (48.0 kHz HiFi) | French Public Classical & Concerts |
+| `somafm-groovesalad`| SomaFM Groove Salad | **MP3** (256 kbps) | Ambient / Downtempo Grooves |
+| `somafm-dronezone` | SomaFM Drone Zone | **MP3** (256 kbps) | Deep Ambient & Drone |
+| `somafm-defcon` | SomaFM DEF CON Radio | **MP3** (256 kbps) | Underground Hacker Electronica |
+| `kexp-seattle` | KEXP 90.3 Seattle | **AAC** (160 kbps) | Indie Rock, Alternative & Local |
+| `nts-1` | NTS Radio (Channel 1) | **MP3** (192 kbps) | London Underground Electronic |
+
+---
+
 ## Architecture & Subsystems
 
 ```text

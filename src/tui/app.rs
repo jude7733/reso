@@ -12,6 +12,7 @@ use crate::mpv::record::StreamRecorder;
 use crate::tui::cover::CoverArtManager;
 use crate::tui::visualizer::VisualizerState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::widgets::ListState;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -34,6 +35,7 @@ pub struct App {
     pub catalog: StationsCatalog,
     pub current_station: Option<Station>,
     pub station_list_index: usize,
+    pub station_list_state: ListState,
     pub playback_state: PlaybackState,
     pub track_metadata: TrackMetadata,
     pub stream_params: AudioStreamParams,
@@ -47,8 +49,11 @@ pub struct App {
     pub search_query: String,
     pub search_results: Vec<Station>,
     pub search_results_index: usize,
+    pub search_list_state: ListState,
     pub search_input_active: bool,
     pub liked_tracks_history: Vec<String>,
+    pub liked_list_index: usize,
+    pub liked_list_state: ListState,
     pub show_help_modal: bool,
     pub visualizer_state: VisualizerState,
     pub cover_art_manager: CoverArtManager,
@@ -86,6 +91,7 @@ impl App {
             catalog,
             current_station: None,
             station_list_index: 0,
+            station_list_state: ListState::default(),
             playback_state: PlaybackState::Stopped,
             track_metadata: TrackMetadata::default(),
             stream_params: AudioStreamParams::default(),
@@ -99,8 +105,11 @@ impl App {
             search_query: String::new(),
             search_results: Vec::new(),
             search_results_index: 0,
+            search_list_state: ListState::default(),
             search_input_active: false,
             liked_tracks_history: Vec::new(),
+            liked_list_index: 0,
+            liked_list_state: ListState::default(),
             show_help_modal: false,
             visualizer_state: VisualizerState::default(),
             cover_art_manager: CoverArtManager::new(),
@@ -136,7 +145,11 @@ impl App {
 
     /// Queries the active hardware volume and mute status from PipeWire via `wpctl`.
     pub fn refresh_hardware_volume(&mut self) {
-        if let Ok(output) = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output() {
+        if let Ok(output) = Command::new("wpctl")
+            .arg("get-volume")
+            .arg("@DEFAULT_AUDIO_SINK@")
+            .output()
+        {
             if output.status.success() {
                 let s = String::from_utf8_lossy(&output.stdout);
                 // Example: "Volume: 0.25 [MUTED]" or "Volume: 0.50"
@@ -202,7 +215,10 @@ impl App {
 
         // Help modal toggle
         if self.show_help_modal {
-            if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') || key.code == KeyCode::Char('q') {
+            if key.code == KeyCode::Esc
+                || key.code == KeyCode::Char('?')
+                || key.code == KeyCode::Char('q')
+            {
                 self.show_help_modal = false;
             }
             return Ok(());
@@ -342,6 +358,12 @@ impl App {
                         self.search_results_index = (self.search_results_index + 1) % len;
                     }
                 }
+                ActiveTab::Liked => {
+                    let len = self.liked_tracks_history.len();
+                    if len > 0 {
+                        self.liked_list_index = (self.liked_list_index + 1) % len;
+                    }
+                }
                 _ => {}
             },
             KeyCode::Up | KeyCode::Char('k') => match self.active_tab {
@@ -363,6 +385,82 @@ impl App {
                         } else {
                             self.search_results_index -= 1;
                         }
+                    }
+                }
+                ActiveTab::Liked => {
+                    let len = self.liked_tracks_history.len();
+                    if len > 0 {
+                        if self.liked_list_index == 0 {
+                            self.liked_list_index = len - 1;
+                        } else {
+                            self.liked_list_index -= 1;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            KeyCode::PageDown => match self.active_tab {
+                ActiveTab::Stations => {
+                    let len = self.filtered_stations().len();
+                    if len > 0 {
+                        self.station_list_index = (self.station_list_index + 5).min(len - 1);
+                    }
+                }
+                ActiveTab::Search => {
+                    let len = self.search_results.len();
+                    if len > 0 {
+                        self.search_results_index = (self.search_results_index + 5).min(len - 1);
+                    }
+                }
+                ActiveTab::Liked => {
+                    let len = self.liked_tracks_history.len();
+                    if len > 0 {
+                        self.liked_list_index = (self.liked_list_index + 5).min(len - 1);
+                    }
+                }
+                _ => {}
+            },
+            KeyCode::PageUp => match self.active_tab {
+                ActiveTab::Stations => {
+                    self.station_list_index = self.station_list_index.saturating_sub(5);
+                }
+                ActiveTab::Search => {
+                    self.search_results_index = self.search_results_index.saturating_sub(5);
+                }
+                ActiveTab::Liked => {
+                    self.liked_list_index = self.liked_list_index.saturating_sub(5);
+                }
+                _ => {}
+            },
+            KeyCode::Home | KeyCode::Char('g') => match self.active_tab {
+                ActiveTab::Stations => {
+                    self.station_list_index = 0;
+                }
+                ActiveTab::Search => {
+                    self.search_results_index = 0;
+                }
+                ActiveTab::Liked => {
+                    self.liked_list_index = 0;
+                }
+                _ => {}
+            },
+            KeyCode::End | KeyCode::Char('G') => match self.active_tab {
+                ActiveTab::Stations => {
+                    let len = self.filtered_stations().len();
+                    if len > 0 {
+                        self.station_list_index = len - 1;
+                    }
+                }
+                ActiveTab::Search => {
+                    let len = self.search_results.len();
+                    if len > 0 {
+                        self.search_results_index = len - 1;
+                    }
+                }
+                ActiveTab::Liked => {
+                    let len = self.liked_tracks_history.len();
+                    if len > 0 {
+                        self.liked_list_index = len - 1;
                     }
                 }
                 _ => {}
@@ -460,10 +558,14 @@ impl App {
             // If playing a Radio Paradise station, poll rich metadata
             if let Some(st) = &self.current_station {
                 if let Some(chan) = st.rp_channel {
-                    if let Ok(Some(rp_meta)) = self.api_client.fetch_radioparadise_now_playing(chan).await {
+                    if let Ok(Some(rp_meta)) =
+                        self.api_client.fetch_radioparadise_now_playing(chan).await
+                    {
                         if self.track_metadata.title != rp_meta.title {
                             if let Some(cover_url) = &rp_meta.cover_url {
-                                if let Ok(bytes) = self.api_client.download_image_bytes(cover_url).await {
+                                if let Ok(bytes) =
+                                    self.api_client.download_image_bytes(cover_url).await
+                                {
                                     self.cover_art_manager.load_image(cover_url, &bytes);
                                 }
                             }

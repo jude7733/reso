@@ -8,7 +8,10 @@ use crate::util::{format_duration, format_sample_rate};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph};
+use ratatui::widgets::{
+    Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState,
+};
 use ratatui::Frame;
 
 /// Renders the complete TUI application frame.
@@ -50,7 +53,12 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     // 1. Logo
     let logo_text = vec![Line::from(vec![
-        Span::styled("RESO ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "RESO ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("v0.1.0", Style::default().fg(Color::DarkGray)),
     ])];
     let logo_widget = Paragraph::new(logo_text).block(
@@ -80,10 +88,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::Gray)
             };
-            vec![
-                Span::styled(format!(" {} ", name), style),
-                Span::raw(" "),
-            ]
+            vec![Span::styled(format!(" {} ", name), style), Span::raw(" ")]
         })
         .collect();
 
@@ -103,7 +108,9 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     if let Some(secs) = app.sleep_timer_secs_remaining {
         badge_spans.push(Span::styled(
             format!(" ⏳{} ", format_duration(secs)),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ));
     }
 
@@ -116,7 +123,10 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         };
         badge_spans.push(Span::styled(
             " 🔴 REC ",
-            Style::default().fg(Color::White).bg(pulse).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .bg(pulse)
+                .add_modifier(Modifier::BOLD),
         ));
     }
 
@@ -126,19 +136,33 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             let rate_str = format_sample_rate(app.pipeline_status.source_rate);
             badge_spans.push(Span::styled(
                 format!(" [✓ BIT-PERFECT: {}] ", rate_str),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
-        Some(BitPerfectVerdict::Resampled { source_rate, sink_rate, .. }) => {
+        Some(BitPerfectVerdict::Resampled {
+            source_rate,
+            sink_rate,
+            ..
+        }) => {
             badge_spans.push(Span::styled(
-                format!(" [⚠ RESAMPLED: {}→{}] ", format_sample_rate(*source_rate), format_sample_rate(*sink_rate)),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                format!(
+                    " [⚠ RESAMPLED: {}→{}] ",
+                    format_sample_rate(*source_rate),
+                    format_sample_rate(*sink_rate)
+                ),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::VolumeDegraded { .. }) => {
             badge_spans.push(Span::styled(
                 " [⚠ VOL < 100%] ",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::DspFilterActive { .. }) => {
@@ -194,11 +218,22 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Renders the station catalog list on the left.
-fn render_stations_list(f: &mut Frame, app: &App, area: Rect) {
+fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.active_tab == ActiveTab::Stations && !app.search_input_active;
+    let filtered: Vec<crate::config::Station> =
+        app.filtered_stations().into_iter().cloned().collect();
+    let total_len = filtered.len();
 
-    let items: Vec<ListItem> = app
-        .filtered_stations()
+    if total_len > 0 && app.station_list_index >= total_len {
+        app.station_list_index = total_len - 1;
+    }
+    if total_len == 0 {
+        app.station_list_state.select(None);
+    } else {
+        app.station_list_state.select(Some(app.station_list_index));
+    }
+
+    let items: Vec<ListItem> = filtered
         .iter()
         .enumerate()
         .map(|(idx, station)| {
@@ -217,7 +252,11 @@ fn render_stations_list(f: &mut Frame, app: &App, area: Rect) {
 
             let fav_icon = if station.favorite { "★ " } else { "  " };
 
-            let rate_badge = format!("[{} {}]", station.codec, format_sample_rate(station.sample_rate));
+            let rate_badge = format!(
+                "[{} {}]",
+                station.codec,
+                format_sample_rate(station.sample_rate)
+            );
 
             let base_style = if is_selected {
                 Style::default()
@@ -225,13 +264,22 @@ fn render_stations_list(f: &mut Frame, app: &App, area: Rect) {
                     .bg(Color::Rgb(30, 45, 60))
                     .add_modifier(Modifier::BOLD)
             } else if is_playing {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
             let content = Line::from(vec![
-                Span::styled(play_icon, if is_playing { Style::default().fg(Color::Green) } else { base_style }),
+                Span::styled(
+                    play_icon,
+                    if is_playing {
+                        Style::default().fg(Color::Green)
+                    } else {
+                        base_style
+                    },
+                ),
                 Span::styled(fav_icon, Style::default().fg(Color::Yellow)),
                 Span::styled(format!("{:<28}", station.name), base_style),
                 Span::styled(rate_badge, Style::default().fg(Color::DarkGray)),
@@ -241,18 +289,40 @@ fn render_stations_list(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let border_color = if is_focused { Color::Cyan } else { Color::DarkGray };
-    let title = format!(" Stations ({}) ", app.catalog.stations.len());
+    let border_color = if is_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let title = format!(" Stations ({}) ", total_len);
 
-    let list_widget = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(title)
-            .border_style(Style::default().fg(border_color)),
-    );
+    let list_widget = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(title)
+                .border_style(Style::default().fg(border_color)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Rgb(30, 45, 60))
+                .add_modifier(Modifier::BOLD),
+        );
 
-    f.render_widget(list_widget, area);
+    f.render_stateful_widget(list_widget, area, &mut app.station_list_state);
+
+    let visible_height = area.height.saturating_sub(2) as usize;
+    if total_len > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_len).position(app.station_list_index);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
 }
 
 /// Renders the right pane: Now Playing (top) + Audiophile Diagnostics (bottom).
@@ -296,11 +366,12 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|s| s.name.clone())
         .unwrap_or_else(|| "No Station Selected".to_string());
 
-    let track_title = app
-        .track_metadata
-        .title
-        .clone()
-        .unwrap_or_else(|| app.track_metadata.raw_title.clone().unwrap_or_else(|| "Idle".to_string()));
+    let track_title = app.track_metadata.title.clone().unwrap_or_else(|| {
+        app.track_metadata
+            .raw_title
+            .clone()
+            .unwrap_or_else(|| "Idle".to_string())
+    });
 
     let artist_name = app
         .track_metadata
@@ -316,20 +387,37 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
 
     let stream_params = format!(
         "{} • {} • {} • {}",
-        if app.stream_params.codec.is_empty() { "FLAC" } else { &app.stream_params.codec },
+        if app.stream_params.codec.is_empty() {
+            "FLAC"
+        } else {
+            &app.stream_params.codec
+        },
         format_sample_rate(app.stream_params.sample_rate),
-        app.stream_params.bit_depth.map(|b| format!("{}-bit", b)).unwrap_or_else(|| "16/24-bit".to_string()),
+        app.stream_params
+            .bit_depth
+            .map(|b| format!("{}-bit", b))
+            .unwrap_or_else(|| "16/24-bit".to_string()),
         crate::util::format_bitrate(app.stream_params.bitrate_kbps.unwrap_or(0)),
     );
 
     let text = vec![
         Line::from(vec![
             Span::styled("Station: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(station_name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                station_name,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Track:   ", Style::default().fg(Color::DarkGray)),
-            Span::styled(track_title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                track_title,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Artist:  ", Style::default().fg(Color::DarkGray)),
@@ -361,18 +449,46 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
 
     let src_rate = format_sample_rate(status.source_rate);
     let pw_rate = format_sample_rate(status.pw_sink_rate.unwrap_or(0));
-    let dac_rate = format_sample_rate(status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or(0));
-    let dac_fmt = status.alsa_hw_params.as_ref().and_then(|h| h.format.as_deref()).unwrap_or("S24_3LE");
+    let dac_rate = format_sample_rate(
+        status
+            .alsa_hw_params
+            .as_ref()
+            .and_then(|h| h.rate)
+            .unwrap_or(0),
+    );
+    let dac_fmt = status
+        .alsa_hw_params
+        .as_ref()
+        .and_then(|h| h.format.as_deref())
+        .unwrap_or("S24_3LE");
 
     let diagram_line = Line::from(vec![
-        Span::styled(format!(" [1] Source: {} ", src_rate), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" [1] Source: {} ", src_rate),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" ──▶ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!(" [2] PipeWire Sink: {} ", pw_rate), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" [2] PipeWire Sink: {} ", pw_rate),
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" ──▶ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!(" [3] USB DAC: {} ({}) ", dac_rate, dac_fmt), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" [3] USB DAC: {} ({}) ", dac_rate, dac_fmt),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]);
 
-    let dac_name = status.alsa_card_name.as_deref().unwrap_or("USB DAC / ALSA Hardware");
+    let dac_name = status
+        .alsa_card_name
+        .as_deref()
+        .unwrap_or("USB DAC / ALSA Hardware");
 
     let mut lines = vec![
         diagram_line,
@@ -385,7 +501,10 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
     // Culprit Warning
     if let Some(culprit) = status.pw_culprits.first() {
         lines.push(Line::from(vec![
-            Span::styled("⚠ Resampling Culprit: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "⚠ Resampling Culprit: ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(&culprit.description, Style::default().fg(Color::Yellow)),
         ]));
     }
@@ -393,11 +512,21 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
     // Hardware Volume Bar (wpctl)
     let vol = app.hardware_volume;
     let vol_bars = (vol * 20.0).round() as usize;
-    let bar_str: String = "█".repeat(vol_bars.min(20)) + &"░".repeat(20usize.saturating_sub(vol_bars));
+    let bar_str: String =
+        "█".repeat(vol_bars.min(20)) + &"░".repeat(20usize.saturating_sub(vol_bars));
     lines.push(Line::from(vec![
-        Span::styled("Hardware Vol (wpctl): ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{:.0}% [{}]", vol * 100.0, bar_str), Style::default().fg(Color::Cyan)),
-        Span::styled(if app.is_muted { " [MUTED]" } else { "" }, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Hardware Vol (wpctl): ",
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            format!("{:.0}% [{}]", vol * 100.0, bar_str),
+            Style::default().fg(Color::Cyan),
+        ),
+        Span::styled(
+            if app.is_muted { " [MUTED]" } else { "" },
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
     ]));
 
     let diag_widget = Paragraph::new(lines).block(
@@ -440,7 +569,12 @@ fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
         .iter()
         .flat_map(|(k, v)| {
             vec![
-                Span::styled(format!("[{}]", k), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("[{}]", k),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!("{} ", v), Style::default().fg(Color::DarkGray)),
                 Span::raw(" "),
             ]
@@ -452,7 +586,7 @@ fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
 }
 
 /// Renders the Search tab targeting Radio-Browser API.
-fn render_search_tab(f: &mut Frame, app: &App, area: Rect) {
+fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -471,6 +605,16 @@ fn render_search_tab(f: &mut Frame, app: &App, area: Rect) {
     );
     f.render_widget(search_input, chunks[0]);
 
+    let total_len = app.search_results.len();
+    if total_len > 0 && app.search_results_index >= total_len {
+        app.search_results_index = total_len - 1;
+    }
+    if total_len == 0 {
+        app.search_list_state.select(None);
+    } else {
+        app.search_list_state.select(Some(app.search_results_index));
+    }
+
     let items: Vec<ListItem> = app
         .search_results
         .iter()
@@ -478,7 +622,10 @@ fn render_search_tab(f: &mut Frame, app: &App, area: Rect) {
         .map(|(idx, s)| {
             let is_sel = idx == app.search_results_index;
             let style = if is_sel {
-                Style::default().fg(Color::White).bg(Color::Rgb(30, 45, 60)).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Rgb(30, 45, 60))
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
@@ -492,14 +639,36 @@ fn render_search_tab(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let results_widget = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(format!(" Search Results ({}) - [Enter: Play | 'a': Add to Catalog] ", app.search_results.len()))
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-    f.render_widget(results_widget, chunks[1]);
+    let results_widget = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(format!(
+                    " Search Results ({}) - [Enter: Play | 'a': Add to Catalog] ",
+                    total_len
+                ))
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Rgb(30, 45, 60))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(results_widget, chunks[1], &mut app.search_list_state);
+
+    let visible_height = chunks[1].height.saturating_sub(2) as usize;
+    if total_len > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_len).position(app.search_results_index);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        f.render_stateful_widget(scrollbar, chunks[1], &mut scrollbar_state);
+    }
 }
 
 /// Truncates a string to max_len characters with ellipsis.
@@ -637,7 +806,12 @@ fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
     let title_line = Line::from(vec![
         Span::styled(title_badge, title_style),
         Span::raw(" "),
-        Span::styled("Audiophile Signal Integrity Report", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Audiophile Signal Integrity Report",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]);
 
     let mut content_lines = vec![title_line];
@@ -666,7 +840,11 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     // Stage 1: Source (MPV Decoder)
-    let codec = if status.source_codec.is_empty() { "FLAC" } else { &status.source_codec };
+    let codec = if status.source_codec.is_empty() {
+        "FLAC"
+    } else {
+        &status.source_codec
+    };
     let sample_rate = format_sample_rate(status.source_rate);
     let bit_depth = status
         .source_bit_depth
@@ -688,11 +866,21 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
     let stage1_lines = vec![
         Line::from(vec![
             Span::styled("Codec:     ", Style::default().fg(Color::DarkGray)),
-            Span::styled(codec, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                codec,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Rate:      ", Style::default().fg(Color::DarkGray)),
-            Span::styled(sample_rate, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                sample_rate,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Depth:     ", Style::default().fg(Color::DarkGray)),
@@ -709,7 +897,14 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("MPV Vol:   ", Style::default().fg(Color::DarkGray)),
             Span::styled(vol_str, vol_style.add_modifier(Modifier::BOLD)),
-            Span::styled(if status.mpv_volume >= 99.5 { " [✓ Exact]" } else { " [⚠ Lossy]" }, vol_style),
+            Span::styled(
+                if status.mpv_volume >= 99.5 {
+                    " [✓ Exact]"
+                } else {
+                    " [⚠ Lossy]"
+                },
+                vol_style,
+            ),
         ]),
         Line::from(vec![
             Span::styled("Stage 1:   ", Style::default().fg(Color::DarkGray)),
@@ -722,7 +917,10 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         .border_type(BorderType::Rounded)
         .title(" 1. Stream Source (MPV) ")
         .border_style(Style::default().fg(Color::Cyan));
-    f.render_widget(Paragraph::new(stage1_lines).block(stage1_block), stage_chunks[0]);
+    f.render_widget(
+        Paragraph::new(stage1_lines).block(stage1_block),
+        stage_chunks[0],
+    );
 
     // Stage 2: PipeWire Audio Graph
     let sink_desc = status
@@ -749,7 +947,11 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
     } else {
         format!("Active ({})", status.pw_dsp_filters.len())
     };
-    let dsp_color = if status.pw_dsp_filters.is_empty() { Color::Green } else { Color::Red };
+    let dsp_color = if status.pw_dsp_filters.is_empty() {
+        Color::Green
+    } else {
+        Color::Red
+    };
 
     let allowed_str = if status.pw_allowed_rates.is_empty() {
         "Dynamic rates".to_string()
@@ -768,17 +970,36 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
             .join(", ")
     };
 
-    let sink_running = status.pw_sink.as_ref().map(|s| s.is_running).unwrap_or(false);
+    let sink_running = status
+        .pw_sink
+        .as_ref()
+        .map(|s| s.is_running)
+        .unwrap_or(false);
 
     let stage2_lines = vec![
         Line::from(vec![
             Span::styled("Sink Node: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(truncate_str(&sink_desc, 18), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                truncate_str(&sink_desc, 18),
+                Style::default().fg(Color::Cyan),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Sink Rate: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(sink_rate, Style::default().fg(sink_rate_color).add_modifier(Modifier::BOLD)),
-            Span::styled(if sink_rate_val == status.source_rate && status.source_rate > 0 { " [MATCH]" } else { "" }, Style::default().fg(Color::Green)),
+            Span::styled(
+                sink_rate,
+                Style::default()
+                    .fg(sink_rate_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if sink_rate_val == status.source_rate && status.source_rate > 0 {
+                    " [MATCH]"
+                } else {
+                    ""
+                },
+                Style::default().fg(Color::Green),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Format:    ", Style::default().fg(Color::DarkGray)),
@@ -786,7 +1007,10 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("Clocks:    ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("[{}]", allowed_str), Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!("[{}]", allowed_str),
+                Style::default().fg(Color::Gray),
+            ),
         ]),
         Line::from(vec![
             Span::styled("DSP Path:  ", Style::default().fg(Color::DarkGray)),
@@ -795,8 +1019,16 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("Graph:     ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                if sink_running { "● Active Link" } else { "○ Standby" },
-                if sink_running { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
+                if sink_running {
+                    "● Active Link"
+                } else {
+                    "○ Standby"
+                },
+                if sink_running {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
             ),
         ]),
         Line::from(vec![
@@ -810,10 +1042,16 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         .border_type(BorderType::Rounded)
         .title(" 2. PipeWire Audio Graph ")
         .border_style(Style::default().fg(Color::Blue));
-    f.render_widget(Paragraph::new(stage2_lines).block(stage2_block), stage_chunks[1]);
+    f.render_widget(
+        Paragraph::new(stage2_lines).block(stage2_block),
+        stage_chunks[1],
+    );
 
     // Stage 3: Hardware DAC (ALSA)
-    let dac_name = status.alsa_card_name.as_deref().unwrap_or("ALSA Hardware Target");
+    let dac_name = status
+        .alsa_card_name
+        .as_deref()
+        .unwrap_or("ALSA Hardware Target");
     let hw = status.alsa_hw_params.as_ref();
     let hw_rate_val = hw.and_then(|h| h.rate).unwrap_or(0);
     let hw_rate = format_sample_rate(hw_rate_val);
@@ -824,21 +1062,46 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
     } else {
         Color::DarkGray
     };
-    let hw_fmt = hw.and_then(|h| h.format.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let hw_fmt = hw
+        .and_then(|h| h.format.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
     let hw_active = hw.map(|h| h.is_active).unwrap_or(false);
     let buffer_info = hw
-        .map(|h| format!("{}/{}", h.period_size.unwrap_or(0), h.buffer_size.unwrap_or(0)))
+        .map(|h| {
+            format!(
+                "{}/{}",
+                h.period_size.unwrap_or(0),
+                h.buffer_size.unwrap_or(0)
+            )
+        })
         .unwrap_or_else(|| "—".to_string());
 
     let stage3_lines = vec![
         Line::from(vec![
             Span::styled("DAC Card:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(truncate_str(dac_name, 18), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                truncate_str(dac_name, 18),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("HW Clock:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(hw_rate, Style::default().fg(hw_rate_color).add_modifier(Modifier::BOLD)),
-            Span::styled(if hw_rate_val == status.source_rate && status.source_rate > 0 { " [MATCH]" } else { "" }, Style::default().fg(Color::Green)),
+            Span::styled(
+                hw_rate,
+                Style::default()
+                    .fg(hw_rate_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if hw_rate_val == status.source_rate && status.source_rate > 0 {
+                    " [MATCH]"
+                } else {
+                    ""
+                },
+                Style::default().fg(Color::Green),
+            ),
         ]),
         Line::from(vec![
             Span::styled("HW Format: ", Style::default().fg(Color::DarkGray)),
@@ -851,8 +1114,16 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("ALSA State:", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                if hw_active { "● Direct DMA" } else { "○ Idle" },
-                if hw_active { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
+                if hw_active {
+                    "● Direct DMA"
+                } else {
+                    "○ Idle"
+                },
+                if hw_active {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
             ),
         ]),
         Line::from(vec![
@@ -861,7 +1132,12 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("Stage 3:   ", Style::default().fg(Color::DarkGray)),
-            Span::styled("✓ Analog Audio Out", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "✓ Analog Audio Out",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
     ];
 
@@ -870,7 +1146,10 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         .border_type(BorderType::Rounded)
         .title(" 3. Hardware DAC / ALSA ")
         .border_style(Style::default().fg(Color::Green));
-    f.render_widget(Paragraph::new(stage3_lines).block(stage3_block), stage_chunks[2]);
+    f.render_widget(
+        Paragraph::new(stage3_lines).block(stage3_block),
+        stage_chunks[2],
+    );
 }
 
 /// Renders the bottom diagnostic insights & DAC capability matrix.
@@ -889,59 +1168,102 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
     let mut left_lines = Vec::new();
 
     if !status.pw_culprits.is_empty() {
-        left_lines.push(Line::from(vec![
-            Span::styled("⚠ ACTIVE CLOCK CONFLICT DETECTED:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        ]));
+        left_lines.push(Line::from(vec![Span::styled(
+            "⚠ ACTIVE CLOCK CONFLICT DETECTED:",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )]));
         for culprit in &status.pw_culprits {
             left_lines.push(Line::from(vec![
                 Span::styled("  • Process:      ", Style::default().fg(Color::DarkGray)),
-                Span::styled(&culprit.name, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" (PID {})", culprit.pid.map(|p| p.to_string()).unwrap_or_else(|| "?".to_string())), Style::default().fg(Color::Gray)),
+                Span::styled(
+                    &culprit.name,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(
+                        " (PID {})",
+                        culprit
+                            .pid
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "?".to_string())
+                    ),
+                    Style::default().fg(Color::Gray),
+                ),
             ]));
             left_lines.push(Line::from(vec![
                 Span::styled("  • Locking Rate: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format_sample_rate(culprit.locking_rate), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format_sample_rate(culprit.locking_rate),
+                    Style::default().fg(Color::Yellow),
+                ),
             ]));
         }
-        left_lines.push(Line::from(vec![
-            Span::styled("  ➜ Action:       Pause other audio apps to unlock dynamic 44.1k/96k rate switching.", Style::default().fg(Color::Cyan)),
-        ]));
+        left_lines.push(Line::from(vec![Span::styled(
+            "  ➜ Action:       Pause other audio apps to unlock dynamic 44.1k/96k rate switching.",
+            Style::default().fg(Color::Cyan),
+        )]));
     } else if !status.pw_dsp_filters.is_empty() {
-        left_lines.push(Line::from(vec![
-            Span::styled("⚠ ACTIVE DSP FILTERS IN AUDIO PATH:", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-        ]));
+        left_lines.push(Line::from(vec![Span::styled(
+            "⚠ ACTIVE DSP FILTERS IN AUDIO PATH:",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )]));
         for f in &status.pw_dsp_filters {
             left_lines.push(Line::from(vec![
-                Span::styled("  • Active Filter Node: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "  • Active Filter Node: ",
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(f, Style::default().fg(Color::Yellow)),
             ]));
         }
-        left_lines.push(Line::from(vec![
-            Span::styled("  ➜ Action:             Disable DSP / equalizer filters for bit-exact reproduction.", Style::default().fg(Color::Cyan)),
-        ]));
+        left_lines.push(Line::from(vec![Span::styled(
+            "  ➜ Action:             Disable DSP / equalizer filters for bit-exact reproduction.",
+            Style::default().fg(Color::Cyan),
+        )]));
     } else {
         left_lines.push(Line::from(vec![
             Span::styled("Routing:    ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Direct Stream (No resamplers)", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Direct Stream (No resamplers)",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]));
         left_lines.push(Line::from(vec![
             Span::styled("Clocks:     ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Dynamic frequency negotiation enabled", Style::default().fg(Color::White)),
+            Span::styled(
+                "Dynamic frequency negotiation enabled",
+                Style::default().fg(Color::White),
+            ),
         ]));
         if let Some(sink) = &status.pw_sink {
             left_lines.push(Line::from(vec![
                 Span::styled("Sink Node:  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(truncate_str(&sink.name, 28), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    truncate_str(&sink.name, 28),
+                    Style::default().fg(Color::Cyan),
+                ),
             ]));
         }
         left_lines.push(Line::from(vec![
             Span::styled("Hardware:   ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{:.0}% Master (wpctl)", app.hardware_volume * 100.0), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{:.0}% Master (wpctl)", app.hardware_volume * 100.0),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" (Bit-transparent)", Style::default().fg(Color::DarkGray)),
         ]));
         left_lines.push(Line::from(vec![
             Span::styled("DSP Chains: ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Bypassed (Bit-exact path)", Style::default().fg(Color::Green)),
+            Span::styled(
+                "Bypassed (Bit-exact path)",
+                Style::default().fg(Color::Green),
+            ),
         ]));
         left_lines.push(Line::from(vec![
             Span::styled("Conflicts:  ", Style::default().fg(Color::DarkGray)),
@@ -953,7 +1275,11 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(" PipeWire Diagnostics ")
-        .border_style(Style::default().fg(if !status.pw_culprits.is_empty() { Color::Yellow } else { Color::DarkGray }));
+        .border_style(Style::default().fg(if !status.pw_culprits.is_empty() {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        }));
     f.render_widget(Paragraph::new(left_lines).block(left_block), diag_chunks[0]);
 
     // Right Box: DAC Hardware Capability Matrix
@@ -961,10 +1287,15 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
 
     if let Some(caps) = &status.dac_capabilities {
         // Supported Rates Chips
-        let mut rate_spans = vec![
-            Span::styled("Rates:      ", Style::default().fg(Color::DarkGray)),
-        ];
-        let active_hw_rate = status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or(0);
+        let mut rate_spans = vec![Span::styled(
+            "Rates:      ",
+            Style::default().fg(Color::DarkGray),
+        )];
+        let active_hw_rate = status
+            .alsa_hw_params
+            .as_ref()
+            .and_then(|h| h.rate)
+            .unwrap_or(0);
 
         for rate in &caps.supported_rates {
             let is_active = *rate == active_hw_rate && active_hw_rate > 0;
@@ -977,7 +1308,9 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
             if is_active {
                 rate_spans.push(Span::styled(
                     format!("[{}: ACTIVE]", rate_label),
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else {
                 rate_spans.push(Span::styled(
@@ -990,15 +1323,18 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
         right_lines.push(Line::from(rate_spans));
 
         // Bit Depths Chips
-        let mut depth_spans = vec![
-            Span::styled("Depths:     ", Style::default().fg(Color::DarkGray)),
-        ];
+        let mut depth_spans = vec![Span::styled(
+            "Depths:     ",
+            Style::default().fg(Color::DarkGray),
+        )];
         for d in &caps.supported_bit_depths {
             let is_current = status.source_bit_depth == Some(*d);
             if is_current {
                 depth_spans.push(Span::styled(
                     format!("[{}-bit: ACTIVE]", d),
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else {
                 depth_spans.push(Span::styled(
@@ -1024,7 +1360,11 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
             right_lines.push(Line::from(vec![
                 Span::styled("Buffer:     ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    format!("{}p / {}f (Direct DMA Ring)", hw.period_size.unwrap_or(0), hw.buffer_size.unwrap_or(0)),
+                    format!(
+                        "{}p / {}f (Direct DMA Ring)",
+                        hw.period_size.unwrap_or(0),
+                        hw.buffer_size.unwrap_or(0)
+                    ),
                     Style::default().fg(Color::White),
                 ),
             ]));
@@ -1033,32 +1373,53 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
         // Card hardware model
         right_lines.push(Line::from(vec![
             Span::styled("Card Model: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(truncate_str(&caps.card_name, 28), Style::default().fg(Color::White)),
+            Span::styled(
+                truncate_str(&caps.card_name, 28),
+                Style::default().fg(Color::White),
+            ),
         ]));
 
         // ALSA Stream path
         if let Some(card_idx) = status.alsa_card_index {
             right_lines.push(Line::from(vec![
                 Span::styled("ALSA Node:  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("/proc/asound/card{}/stream0", card_idx), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("/proc/asound/card{}/stream0", card_idx),
+                    Style::default().fg(Color::Cyan),
+                ),
             ]));
         }
     } else {
         right_lines.push(Line::from(vec![
             Span::styled("Rates:      ", Style::default().fg(Color::DarkGray)),
-            Span::styled("[ 44.1k ] [ 48.0k ] [ 88.2k ] [ 96.0k ] [ 192.0k ]", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                "[ 44.1k ] [ 48.0k ] [ 88.2k ] [ 96.0k ] [ 192.0k ]",
+                Style::default().fg(Color::Cyan),
+            ),
         ]));
         right_lines.push(Line::from(vec![
             Span::styled("Depths:     ", Style::default().fg(Color::DarkGray)),
-            Span::styled("[ 16-bit ] [ 24-bit ] [ 32-bit ]", Style::default().fg(Color::White)),
+            Span::styled(
+                "[ 16-bit ] [ 24-bit ] [ 32-bit ]",
+                Style::default().fg(Color::White),
+            ),
         ]));
         right_lines.push(Line::from(vec![
             Span::styled("DAC Device: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(status.alsa_card_name.as_deref().unwrap_or("Standard Linux Audio Device"), Style::default().fg(Color::Gray)),
+            Span::styled(
+                status
+                    .alsa_card_name
+                    .as_deref()
+                    .unwrap_or("Standard Linux Audio Device"),
+                Style::default().fg(Color::Gray),
+            ),
         ]));
         right_lines.push(Line::from(vec![
             Span::styled("ALSA Node:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("/proc/asound/cards (Active Sound Core)", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "/proc/asound/cards (Active Sound Core)",
+                Style::default().fg(Color::DarkGray),
+            ),
         ]));
     }
 
@@ -1067,25 +1428,72 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
         .border_type(BorderType::Rounded)
         .title(" DAC Hardware Matrix ")
         .border_style(Style::default().fg(Color::DarkGray));
-    f.render_widget(Paragraph::new(right_lines).block(right_block), diag_chunks[1]);
+    f.render_widget(
+        Paragraph::new(right_lines).block(right_block),
+        diag_chunks[1],
+    );
 }
 
 /// Renders the Liked Tracks history tab.
-fn render_liked_tab(f: &mut Frame, app: &App, area: Rect) {
+fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
+    let total_len = app.liked_tracks_history.len();
+    if total_len > 0 && app.liked_list_index >= total_len {
+        app.liked_list_index = total_len - 1;
+    }
+    if total_len == 0 {
+        app.liked_list_state.select(None);
+    } else {
+        app.liked_list_state.select(Some(app.liked_list_index));
+    }
+
     let items: Vec<ListItem> = app
         .liked_tracks_history
         .iter()
-        .map(|line| ListItem::new(Span::styled(line, Style::default().fg(Color::Gray))))
+        .enumerate()
+        .map(|(idx, line)| {
+            let is_sel = idx == app.liked_list_index;
+            let style = if is_sel {
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Rgb(30, 45, 60))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            ListItem::new(Span::styled(line, style))
+        })
         .collect();
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(" Liked Tracks History (~/.config/reso/liked_tracks.md) ")
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-    f.render_widget(list, area);
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(format!(
+                    " Liked Tracks History ({}) (~/.config/reso/liked_tracks.md) ",
+                    total_len
+                ))
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Rgb(30, 45, 60))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, area, &mut app.liked_list_state);
+
+    let visible_height = area.height.saturating_sub(2) as usize;
+    if total_len > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_len).position(app.liked_list_index);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
 }
 
 /// Renders the Help modal popup.
@@ -1127,6 +1535,9 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
     4                   Switch to Liked Tracks history tab
     j / Down            Navigate down
     k / Up              Navigate up
+    PgDn / PgUp         Scroll by page (5 items)
+    g / Home            Jump to top
+    G / End             Jump to bottom
     ?                   Toggle this Help screen
     q / Esc             Quit Reso
 

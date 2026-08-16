@@ -59,8 +59,14 @@ impl ApiClient {
     }
 
     /// Fetches rich metadata from Radio Paradise for a specific channel (0: Main, 1: Mellow, 2: Rock, 3: World).
-    pub async fn fetch_radioparadise_now_playing(&self, channel: u32) -> Result<Option<TrackMetadata>> {
-        let url = format!("https://api.radioparadise.com/api/now_playing?chan={}", channel);
+    pub async fn fetch_radioparadise_now_playing(
+        &self,
+        channel: u32,
+    ) -> Result<Option<TrackMetadata>> {
+        let url = format!(
+            "https://api.radioparadise.com/api/now_playing?chan={}",
+            channel
+        );
         let resp = self.client.get(&url).send().await?;
 
         if !resp.status().is_success() {
@@ -103,7 +109,10 @@ impl ApiClient {
         let mut last_err = None;
 
         for server in servers {
-            let mut url = format!("{}/json/stations/search?name={}&limit={}&order=votes&reverse=true", server, query, limit);
+            let mut url = format!(
+                "{}/json/stations/search?name={}&limit={}&order=votes&reverse=true",
+                server, query, limit
+            );
             if let Some(c) = codec {
                 url.push_str(&format!("&codec={}", c));
             }
@@ -126,12 +135,18 @@ impl ApiClient {
                                     .filter(|s| !s.is_empty())
                                     .collect();
 
-                                let codec_str = rb.codec.unwrap_or_else(|| "UNKNOWN".to_string()).to_uppercase();
+                                let codec_str = rb
+                                    .codec
+                                    .unwrap_or_else(|| "UNKNOWN".to_string())
+                                    .to_uppercase();
                                 let sample_rate = 44100;
                                 let bit_depth = 16;
 
                                 Station {
-                                    id: format!("rb-{}", &rb.stationuuid[..8.min(rb.stationuuid.len())]),
+                                    id: format!(
+                                        "rb-{}",
+                                        &rb.stationuuid[..8.min(rb.stationuuid.len())]
+                                    ),
                                     name: rb.name.trim().to_string(),
                                     url: stream_url,
                                     codec: codec_str,

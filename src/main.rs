@@ -82,7 +82,15 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Search(args)) => {
-            handle_search_command(config_manager, args.query, args.codec, args.bitrate, args.limit, args.add).await?;
+            handle_search_command(
+                config_manager,
+                args.query,
+                args.codec,
+                args.bitrate,
+                args.limit,
+                args.add,
+            )
+            .await?;
         }
 
         Some(Commands::Inspect(args)) => {
@@ -114,7 +122,12 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Connects to the MPV IPC server or starts it if required.
-async fn get_mpv_client(config_manager: &ConfigManager) -> Result<(MpvClient, tokio::sync::broadcast::Receiver<events::MpvEvent>)> {
+async fn get_mpv_client(
+    config_manager: &ConfigManager,
+) -> Result<(
+    MpvClient,
+    tokio::sync::broadcast::Receiver<events::MpvEvent>,
+)> {
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
     mpv_proc.ensure_running().await?;
     mpv_proc.disown();
@@ -122,7 +135,11 @@ async fn get_mpv_client(config_manager: &ConfigManager) -> Result<(MpvClient, to
 }
 
 /// Handles `reso list`.
-fn handle_list_command(config_manager: &ConfigManager, favorites_only: bool, as_json: bool) -> Result<()> {
+fn handle_list_command(
+    config_manager: &ConfigManager,
+    favorites_only: bool,
+    as_json: bool,
+) -> Result<()> {
     let stations: Vec<_> = config_manager
         .catalog
         .stations
@@ -139,7 +156,10 @@ fn handle_list_command(config_manager: &ConfigManager, favorites_only: bool, as_
     println!("================================================================================");
     println!("                           RESO CONFIGURED STATIONS                             ");
     println!("================================================================================");
-    println!("{:<14} {:<34} {:<6} {:<10} TAGS", "ID", "STATION NAME", "CODEC", "RATE");
+    println!(
+        "{:<14} {:<34} {:<6} {:<10} TAGS",
+        "ID", "STATION NAME", "CODEC", "RATE"
+    );
     println!("--------------------------------------------------------------------------------");
 
     for st in stations {
@@ -181,11 +201,18 @@ async fn handle_play_command(
             } else if let Some(s) = config_manager.find_station(&q) {
                 s.clone()
             } else {
-                return Err(ResoError::Config(format!("Station '{}' not found in catalog", q)));
+                return Err(ResoError::Config(format!(
+                    "Station '{}' not found in catalog",
+                    q
+                )));
             }
         }
         None => {
-            let default_id = config_manager.config.default_station_id.as_deref().unwrap_or("rp-main");
+            let default_id = config_manager
+                .config
+                .default_station_id
+                .as_deref()
+                .unwrap_or("rp-main");
             config_manager
                 .find_station(default_id)
                 .cloned()
@@ -258,12 +285,40 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
         println!("=================================================================");
         println!("                     RESO CURRENT PLAYBACK                       ");
         println!("=================================================================");
-        println!("Source Codec:      {}", if status.source_codec.is_empty() { "FLAC (Lossless)" } else { &status.source_codec });
-        println!("Sample Rate:       {}", format_sample_rate(status.source_rate));
-        println!("PipeWire Sink:     {}", status.pw_sink.as_ref().map(|s| s.description.as_str()).unwrap_or("Default Sink"));
-        println!("Sink Clock Rate:   {}", format_sample_rate(status.pw_sink_rate.unwrap_or(0)));
-        println!("Hardware DAC:      {}", status.alsa_card_name.as_deref().unwrap_or("USB DAC"));
-        println!("Bit-Perfect Verdict: {:?}", status.verdict.unwrap_or(inspector::status::BitPerfectVerdict::Idle));
+        println!(
+            "Source Codec:      {}",
+            if status.source_codec.is_empty() {
+                "FLAC (Lossless)"
+            } else {
+                &status.source_codec
+            }
+        );
+        println!(
+            "Sample Rate:       {}",
+            format_sample_rate(status.source_rate)
+        );
+        println!(
+            "PipeWire Sink:     {}",
+            status
+                .pw_sink
+                .as_ref()
+                .map(|s| s.description.as_str())
+                .unwrap_or("Default Sink")
+        );
+        println!(
+            "Sink Clock Rate:   {}",
+            format_sample_rate(status.pw_sink_rate.unwrap_or(0))
+        );
+        println!(
+            "Hardware DAC:      {}",
+            status.alsa_card_name.as_deref().unwrap_or("USB DAC")
+        );
+        println!(
+            "Bit-Perfect Verdict: {:?}",
+            status
+                .verdict
+                .unwrap_or(inspector::status::BitPerfectVerdict::Idle)
+        );
         println!("=================================================================");
     }
 
@@ -280,8 +335,13 @@ async fn handle_search_command(
     add_to_catalog: bool,
 ) -> Result<()> {
     let api = ApiClient::new();
-    println!("🔍 Searching Radio-Browser for '{}' (codec: {:?})...", query, codec);
-    let results = api.search_radio_browser(&query, codec.as_deref(), bitrate, limit).await?;
+    println!(
+        "🔍 Searching Radio-Browser for '{}' (codec: {:?})...",
+        query, codec
+    );
+    let results = api
+        .search_radio_browser(&query, codec.as_deref(), bitrate, limit)
+        .await?;
 
     if results.is_empty() {
         println!("No matching stations found.");
@@ -293,14 +353,23 @@ async fn handle_search_command(
     println!("--------------------------------------------------------------------------------");
 
     for st in &results {
-        println!("{:<12} {:<34} {:<8} {}", st.id, st.name, st.codec, st.tags.join(", "));
+        println!(
+            "{:<12} {:<34} {:<8} {}",
+            st.id,
+            st.name,
+            st.codec,
+            st.tags.join(", ")
+        );
         if add_to_catalog {
             let _ = config_manager.add_station(st.clone());
         }
     }
 
     if add_to_catalog {
-        println!("\n✓ Added {} stations to ~/.config/reso/stations.toml", results.len());
+        println!(
+            "\n✓ Added {} stations to ~/.config/reso/stations.toml",
+            results.len()
+        );
     }
 
     Ok(())
@@ -308,13 +377,16 @@ async fn handle_search_command(
 
 /// Handles `reso inspect`.
 async fn handle_inspect_command(_config_manager: &ConfigManager, as_json: bool) -> Result<()> {
-    let status = PipelineStatus::evaluate(&AudioStreamParams {
-        codec: "FLAC".to_string(),
-        sample_rate: 44100,
-        channels: 2,
-        bit_depth: Some(24),
-        bitrate_kbps: Some(920),
-    }, 100.0);
+    let status = PipelineStatus::evaluate(
+        &AudioStreamParams {
+            codec: "FLAC".to_string(),
+            sample_rate: 44100,
+            channels: 2,
+            bit_depth: Some(24),
+            bitrate_kbps: Some(920),
+        },
+        100.0,
+    );
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
@@ -337,7 +409,9 @@ async fn handle_record_command(
 
     match action {
         "start" => {
-            let path = recorder.start_recording("Manual_Record", None, output).await?;
+            let path = recorder
+                .start_recording("Manual_Record", None, output)
+                .await?;
             println!("🔴 Recording started -> {}", path.display());
         }
         "stop" => {
@@ -394,28 +468,63 @@ async fn handle_copy_command(_config_manager: &ConfigManager) -> Result<()> {
 fn handle_volume_command(action: &str) -> Result<()> {
     match action {
         "get" => {
-            let out = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output()?;
+            let out = Command::new("wpctl")
+                .arg("get-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .output()?;
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
         "up" => {
-            let _ = Command::new("wpctl").arg("set-volume").arg("@DEFAULT_AUDIO_SINK@").arg("5%+").output()?;
-            let out = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output()?;
+            let _ = Command::new("wpctl")
+                .arg("set-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .arg("5%+")
+                .output()?;
+            let out = Command::new("wpctl")
+                .arg("get-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .output()?;
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
         "down" => {
-            let _ = Command::new("wpctl").arg("set-volume").arg("@DEFAULT_AUDIO_SINK@").arg("5%-").output()?;
-            let out = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output()?;
+            let _ = Command::new("wpctl")
+                .arg("set-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .arg("5%-")
+                .output()?;
+            let out = Command::new("wpctl")
+                .arg("get-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .output()?;
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
         "mute" => {
-            let _ = Command::new("wpctl").arg("set-mute").arg("@DEFAULT_AUDIO_SINK@").arg("toggle").output()?;
-            let out = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output()?;
+            let _ = Command::new("wpctl")
+                .arg("set-mute")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .arg("toggle")
+                .output()?;
+            let out = Command::new("wpctl")
+                .arg("get-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .output()?;
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
         val => {
-            let arg = if val.ends_with('%') { val.to_string() } else { format!("{}%", val) };
-            let _ = Command::new("wpctl").arg("set-volume").arg("@DEFAULT_AUDIO_SINK@").arg(&arg).output()?;
-            let out = Command::new("wpctl").arg("get-volume").arg("@DEFAULT_AUDIO_SINK@").output()?;
+            let arg = if val.ends_with('%') {
+                val.to_string()
+            } else {
+                format!("{}%", val)
+            };
+            let _ = Command::new("wpctl")
+                .arg("set-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .arg(&arg)
+                .output()?;
+            let out = Command::new("wpctl")
+                .arg("get-volume")
+                .arg("@DEFAULT_AUDIO_SINK@")
+                .output()?;
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
     }

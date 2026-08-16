@@ -31,7 +31,10 @@ impl TrackMetadata {
         match (&self.artist, &self.title) {
             (Some(a), Some(t)) if !a.is_empty() && !t.is_empty() => format!("{} - {}", a, t),
             (_, Some(t)) if !t.is_empty() => t.clone(),
-            _ => self.raw_title.clone().unwrap_or_else(|| "Unknown Track".to_string()),
+            _ => self
+                .raw_title
+                .clone()
+                .unwrap_or_else(|| "Unknown Track".to_string()),
         }
     }
 }
@@ -53,7 +56,10 @@ pub enum MpvEvent {
     Metadata(TrackMetadata),
     AudioParams(AudioStreamParams),
     Volume(f64),
-    RecordingState { is_recording: bool, path: Option<PathBuf> },
+    RecordingState {
+        is_recording: bool,
+        path: Option<PathBuf>,
+    },
     Error(String),
 }
 

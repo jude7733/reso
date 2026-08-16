@@ -43,7 +43,9 @@ impl ScrobbleTracker {
             self.scrobbled = false;
 
             if let (Some(artist), Some(title)) = (&track.artist, &track.title) {
-                let _ = self.update_now_playing(artist, title, track.album.as_deref()).await;
+                let _ = self
+                    .update_now_playing(artist, title, track.album.as_deref())
+                    .await;
             }
         }
     }
@@ -60,7 +62,9 @@ impl ScrobbleTracker {
 
             if elapsed >= threshold {
                 if let (Some(artist), Some(title)) = (&track.artist, &track.title) {
-                    let _ = self.scrobble_track(artist, title, track.album.as_deref()).await;
+                    let _ = self
+                        .scrobble_track(artist, title, track.album.as_deref())
+                        .await;
                     self.scrobbled = true;
                 }
             }
@@ -68,7 +72,12 @@ impl ScrobbleTracker {
     }
 
     /// Submits "Now Playing" status to Last.fm.
-    async fn update_now_playing(&self, artist: &str, title: &str, album: Option<&str>) -> Result<()> {
+    async fn update_now_playing(
+        &self,
+        artist: &str,
+        title: &str,
+        album: Option<&str>,
+    ) -> Result<()> {
         if !self.lastfm.enabled {
             return Ok(());
         }

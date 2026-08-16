@@ -74,9 +74,13 @@ impl MpvClient {
 
     /// Connects to the MPV IPC socket, initiates property observers, and spawns the background event loop.
     pub async fn connect(socket_path: PathBuf) -> Result<(Self, broadcast::Receiver<MpvEvent>)> {
-        let stream = UnixStream::connect(&socket_path)
-            .await
-            .map_err(|e| ResoError::Ipc(format!("Failed to connect to MPV socket at {}: {}", socket_path.display(), e)))?;
+        let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+            ResoError::Ipc(format!(
+                "Failed to connect to MPV socket at {}: {}",
+                socket_path.display(),
+                e
+            ))
+        })?;
 
         let framed = Framed::new(stream, LinesCodec::new());
         let (mut writer, mut reader) = framed.split();
@@ -122,7 +126,8 @@ impl MpvClient {
                                             };
                                             if new_state != current_state {
                                                 current_state = new_state;
-                                                let _ = event_tx_clone.send(MpvEvent::State(current_state));
+                                                let _ = event_tx_clone
+                                                    .send(MpvEvent::State(current_state));
                                             }
                                         }
                                     }
@@ -138,38 +143,50 @@ impl MpvClient {
                                             };
                                             if new_state != current_state {
                                                 current_state = new_state;
-                                                let _ = event_tx_clone.send(MpvEvent::State(current_state));
+                                                let _ = event_tx_clone
+                                                    .send(MpvEvent::State(current_state));
                                             }
                                         }
                                     }
                                     OBS_AUDIO_PARAMS => {
                                         if let Some(Value::Object(map)) = resp.data {
                                             if let Some(Value::Number(sr)) = map.get("samplerate") {
-                                                current_params.sample_rate = sr.as_u64().unwrap_or(0) as u32;
+                                                current_params.sample_rate =
+                                                    sr.as_u64().unwrap_or(0) as u32;
                                             }
-                                            if let Some(Value::Number(ch)) = map.get("channel-count") {
-                                                current_params.channels = ch.as_u64().unwrap_or(2) as u32;
+                                            if let Some(Value::Number(ch)) =
+                                                map.get("channel-count")
+                                            {
+                                                current_params.channels =
+                                                    ch.as_u64().unwrap_or(2) as u32;
                                             }
                                             if let Some(Value::String(fmt)) = map.get("format") {
                                                 if fmt.contains("24") || fmt.contains("s24") {
                                                     current_params.bit_depth = Some(24);
-                                                } else if fmt.contains("16") || fmt.contains("s16") {
+                                                } else if fmt.contains("16") || fmt.contains("s16")
+                                                {
                                                     current_params.bit_depth = Some(16);
-                                                } else if fmt.contains("32") || fmt.contains("f32") {
+                                                } else if fmt.contains("32") || fmt.contains("f32")
+                                                {
                                                     current_params.bit_depth = Some(32);
                                                 }
                                             }
-                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(current_params.clone()));
+                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(
+                                                current_params.clone(),
+                                            ));
                                         }
                                     }
                                     OBS_MEDIA_TITLE | OBS_ICY_TITLE => {
                                         if let Some(Value::String(title_str)) = resp.data {
                                             if !title_str.trim().is_empty() {
-                                                let (artist, title) = parse_artist_title(&title_str);
+                                                let (artist, title) =
+                                                    parse_artist_title(&title_str);
                                                 current_metadata.artist = artist;
                                                 current_metadata.title = title;
                                                 current_metadata.raw_title = Some(title_str);
-                                                let _ = event_tx_clone.send(MpvEvent::Metadata(current_metadata.clone()));
+                                                let _ = event_tx_clone.send(MpvEvent::Metadata(
+                                                    current_metadata.clone(),
+                                                ));
                                             }
                                         }
                                     }
@@ -177,13 +194,17 @@ impl MpvClient {
                                         if let Some(Value::Number(br)) = resp.data {
                                             let bps = br.as_f64().unwrap_or(0.0) as u32;
                                             current_params.bitrate_kbps = Some(bps / 1000);
-                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(current_params.clone()));
+                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(
+                                                current_params.clone(),
+                                            ));
                                         }
                                     }
                                     OBS_AUDIO_CODEC => {
                                         if let Some(Value::String(codec)) = resp.data {
                                             current_params.codec = codec.to_uppercase();
-                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(current_params.clone()));
+                                            let _ = event_tx_clone.send(MpvEvent::AudioParams(
+                                                current_params.clone(),
+                                            ));
                                         }
                                     }
                                     OBS_VOLUME => {
@@ -192,22 +213,20 @@ impl MpvClient {
                                             let _ = event_tx_clone.send(MpvEvent::Volume(v));
                                         }
                                     }
-                                    OBS_STREAM_RECORD => {
-                                        match resp.data {
-                                            Some(Value::String(p)) if !p.trim().is_empty() => {
-                                                let _ = event_tx_clone.send(MpvEvent::RecordingState {
-                                                    is_recording: true,
-                                                    path: Some(PathBuf::from(p)),
-                                                });
-                                            }
-                                            _ => {
-                                                let _ = event_tx_clone.send(MpvEvent::RecordingState {
-                                                    is_recording: false,
-                                                    path: None,
-                                                });
-                                            }
+                                    OBS_STREAM_RECORD => match resp.data {
+                                        Some(Value::String(p)) if !p.trim().is_empty() => {
+                                            let _ = event_tx_clone.send(MpvEvent::RecordingState {
+                                                is_recording: true,
+                                                path: Some(PathBuf::from(p)),
+                                            });
                                         }
-                                    }
+                                        _ => {
+                                            let _ = event_tx_clone.send(MpvEvent::RecordingState {
+                                                is_recording: false,
+                                                path: None,
+                                            });
+                                        }
+                                    },
                                     _ => {}
                                 }
                             }
@@ -242,13 +261,23 @@ impl MpvClient {
         // Register Property Observers
         client.observe_property(OBS_PAUSE, "pause").await?;
         client.observe_property(OBS_IDLE, "idle-active").await?;
-        client.observe_property(OBS_AUDIO_PARAMS, "audio-params").await?;
-        client.observe_property(OBS_MEDIA_TITLE, "media-title").await?;
+        client
+            .observe_property(OBS_AUDIO_PARAMS, "audio-params")
+            .await?;
+        client
+            .observe_property(OBS_MEDIA_TITLE, "media-title")
+            .await?;
         client.observe_property(OBS_ICY_TITLE, "icy-title").await?;
-        client.observe_property(OBS_AUDIO_BITRATE, "audio-bitrate").await?;
-        client.observe_property(OBS_AUDIO_CODEC, "audio-codec-name").await?;
+        client
+            .observe_property(OBS_AUDIO_BITRATE, "audio-bitrate")
+            .await?;
+        client
+            .observe_property(OBS_AUDIO_CODEC, "audio-codec-name")
+            .await?;
         client.observe_property(OBS_VOLUME, "volume").await?;
-        client.observe_property(OBS_STREAM_RECORD, "stream-record").await?;
+        client
+            .observe_property(OBS_STREAM_RECORD, "stream-record")
+            .await?;
 
         Ok((client, event_rx))
     }
@@ -275,23 +304,15 @@ impl MpvClient {
 
     /// Instructs MPV to observe a property and push changes asynchronously.
     pub async fn observe_property(&self, id: u64, name: &str) -> Result<()> {
-        self.send_command(vec![
-            json!("observe_property"),
-            json!(id),
-            json!(name),
-        ])
-        .await?;
+        self.send_command(vec![json!("observe_property"), json!(id), json!(name)])
+            .await?;
         Ok(())
     }
 
     /// Loads and begins streaming the given URL.
     pub async fn load_file(&self, url: &str) -> Result<()> {
-        self.send_command(vec![
-            json!("loadfile"),
-            json!(url),
-            json!("replace"),
-        ])
-        .await?;
+        self.send_command(vec![json!("loadfile"), json!(url), json!("replace")])
+            .await?;
         let _ = self.resume().await;
         Ok(())
     }
@@ -314,22 +335,15 @@ impl MpvClient {
 
     /// Toggles pause/playback state.
     pub async fn toggle_pause(&self) -> Result<()> {
-        self.send_command(vec![
-            json!("cycle"),
-            json!("pause"),
-        ])
-        .await?;
+        self.send_command(vec![json!("cycle"), json!("pause")])
+            .await?;
         Ok(())
     }
 
     /// Sets an MPV property by name.
     pub async fn set_property(&self, name: &str, value: Value) -> Result<()> {
-        self.send_command(vec![
-            json!("set_property"),
-            json!(name),
-            value,
-        ])
-        .await?;
+        self.send_command(vec![json!("set_property"), json!(name), value])
+            .await?;
         Ok(())
     }
 

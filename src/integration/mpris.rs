@@ -151,23 +151,33 @@ impl ResoMprisPlayer {
             Value::from("/org/mpris/MediaPlayer2/CurrentTrack"),
         );
 
-        let title = lock
-            .track_metadata
-            .title
-            .clone()
-            .unwrap_or_else(|| lock.track_metadata.raw_title.clone().unwrap_or_else(|| lock.station_name.clone()));
+        let title = lock.track_metadata.title.clone().unwrap_or_else(|| {
+            lock.track_metadata
+                .raw_title
+                .clone()
+                .unwrap_or_else(|| lock.station_name.clone())
+        });
         map.insert("xesam:title".to_string(), Value::from(title));
 
         if let Some(artist) = &lock.track_metadata.artist {
-            map.insert("xesam:artist".to_string(), Value::from(vec![artist.clone()]));
+            map.insert(
+                "xesam:artist".to_string(),
+                Value::from(vec![artist.clone()]),
+            );
         } else {
-            map.insert("xesam:artist".to_string(), Value::from(vec![lock.station_name.clone()]));
+            map.insert(
+                "xesam:artist".to_string(),
+                Value::from(vec![lock.station_name.clone()]),
+            );
         }
 
         if let Some(album) = &lock.track_metadata.album {
             map.insert("xesam:album".to_string(), Value::from(album.clone()));
         } else {
-            map.insert("xesam:album".to_string(), Value::from(lock.station_name.clone()));
+            map.insert(
+                "xesam:album".to_string(),
+                Value::from(lock.station_name.clone()),
+            );
         }
 
         if let Some(art_url) = &lock.track_metadata.cover_url {

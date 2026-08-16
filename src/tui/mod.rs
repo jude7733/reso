@@ -19,7 +19,9 @@ use crate::mpv::process::MpvProcessManager;
 use crate::mpv::record::StreamRecorder;
 use crossterm::event::{Event, EventStream};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use futures_util::StreamExt;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
@@ -34,10 +36,12 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     mpv_proc.ensure_running().await?;
 
     // 2. Connect MPV IPC client
-    let (mpv_client, mut mpv_rx) = MpvClient::connect(config_manager.config.socket_path.clone()).await?;
+    let (mpv_client, mut mpv_rx) =
+        MpvClient::connect(config_manager.config.socket_path.clone()).await?;
 
     // 3. Initialize Recorder & MPRIS
-    let recorder = StreamRecorder::new(mpv_client.clone(), config_manager.config.record_dir.clone());
+    let recorder =
+        StreamRecorder::new(mpv_client.clone(), config_manager.config.record_dir.clone());
     let (action_tx, mut action_rx) = mpsc::channel::<AppAction>(64);
     let mpris_state = start_mpris_server(action_tx.clone()).await.ok();
 

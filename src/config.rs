@@ -150,10 +150,11 @@ pub struct StationsCatalog {
 }
 
 impl StationsCatalog {
-    /// Returns default audiophile lossless stations.
+    /// Returns default audiophile lossless stations and curated high-quality streams.
     pub fn default_lossless_stations() -> Self {
         Self {
             stations: vec![
+                // --- Radio Paradise Mixes (Lossless FLAC) ---
                 Station {
                     id: "rp-main".to_string(),
                     name: "Radio Paradise (Main Mix)".to_string(),
@@ -162,7 +163,11 @@ impl StationsCatalog {
                     sample_rate: 44100,
                     bit_depth: 16,
                     homepage: Some("https://radioparadise.com".to_string()),
-                    tags: vec!["eclectic".to_string(), "lossless".to_string(), "audiophile".to_string()],
+                    tags: vec![
+                        "eclectic".to_string(),
+                        "lossless".to_string(),
+                        "audiophile".to_string(),
+                    ],
                     favorite: true,
                     rp_channel: Some(0),
                 },
@@ -174,7 +179,11 @@ impl StationsCatalog {
                     sample_rate: 44100,
                     bit_depth: 16,
                     homepage: Some("https://radioparadise.com".to_string()),
-                    tags: vec!["mellow".to_string(), "acoustic".to_string(), "lossless".to_string()],
+                    tags: vec![
+                        "mellow".to_string(),
+                        "acoustic".to_string(),
+                        "lossless".to_string(),
+                    ],
                     favorite: false,
                     rp_channel: Some(1),
                 },
@@ -198,72 +207,784 @@ impl StationsCatalog {
                     sample_rate: 44100,
                     bit_depth: 16,
                     homepage: Some("https://radioparadise.com".to_string()),
-                    tags: vec!["world".to_string(), "eclectic".to_string(), "lossless".to_string()],
+                    tags: vec![
+                        "world".to_string(),
+                        "eclectic".to_string(),
+                        "lossless".to_string(),
+                    ],
                     favorite: false,
                     rp_channel: Some(3),
                 },
+                // --- Czech Radio / Český rozhlas (Lossless FLAC) ---
                 Station {
                     id: "czech-d-dur".to_string(),
                     name: "Czech Radio D-Dur (Hi-Res Classical)".to_string(),
-                    url: "http://radio.d-dur.cz/d-dur.flac".to_string(),
+                    url: "http://amp.cesnet.cz:8000/cro-d-dur.flac".to_string(),
                     codec: "FLAC".to_string(),
                     sample_rate: 48000,
                     bit_depth: 24,
                     homepage: Some("https://d-dur.rozhlas.cz".to_string()),
-                    tags: vec!["classical".to_string(), "hi-res".to_string(), "24bit".to_string()],
+                    tags: vec![
+                        "classical".to_string(),
+                        "hi-res".to_string(),
+                        "lossless".to_string(),
+                    ],
                     favorite: true,
                     rp_channel: None,
                 },
                 Station {
-                    id: "jb-radio2".to_string(),
-                    name: "JB Radio-2 (Hi-Res FLAC 96kHz/24b)".to_string(),
-                    url: "http://199.189.87.9:10999/flac".to_string(),
+                    id: "czech-jazz".to_string(),
+                    name: "Czech Radio Jazz (FLAC)".to_string(),
+                    url: "http://amp.cesnet.cz:8000/cro-jazz.flac".to_string(),
                     codec: "FLAC".to_string(),
-                    sample_rate: 96000,
+                    sample_rate: 48000,
                     bit_depth: 24,
-                    homepage: Some("https://jbradio2.ca".to_string()),
-                    tags: vec!["audiophile".to_string(), "hi-res".to_string(), "96khz".to_string(), "rock".to_string()],
+                    homepage: Some("https://jazz.rozhlas.cz".to_string()),
+                    tags: vec![
+                        "jazz".to_string(),
+                        "hi-res".to_string(),
+                        "lossless".to_string(),
+                    ],
                     favorite: true,
                     rp_channel: None,
                 },
                 Station {
-                    id: "mother-earth".to_string(),
-                    name: "Mother Earth Radio (Hi-Res 96kHz)".to_string(),
-                    url: "https://motherearth.streamserver24.com/listen/motherearth/motherearth.flac".to_string(),
+                    id: "czech-vltava".to_string(),
+                    name: "Czech Radio Vltava (Culture/Classical FLAC)".to_string(),
+                    url: "http://amp.cesnet.cz:8000/cro3.flac".to_string(),
                     codec: "FLAC".to_string(),
-                    sample_rate: 96000,
+                    sample_rate: 48000,
                     bit_depth: 24,
-                    homepage: Some("https://motherearthradio.de".to_string()),
-                    tags: vec!["audiophile".to_string(), "hi-res".to_string(), "vinyl".to_string()],
+                    homepage: Some("https://vltava.rozhlas.cz".to_string()),
+                    tags: vec![
+                        "classical".to_string(),
+                        "culture".to_string(),
+                        "lossless".to_string(),
+                    ],
                     favorite: false,
                     rp_channel: None,
                 },
                 Station {
+                    id: "czech-wave".to_string(),
+                    name: "Czech Radio Wave (Alternative/Indie FLAC)".to_string(),
+                    url: "http://amp.cesnet.cz:8000/cro-radio-wave.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 24,
+                    homepage: Some("https://wave.rozhlas.cz".to_string()),
+                    tags: vec![
+                        "indie".to_string(),
+                        "alternative".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                // --- Sector Radio (Lossless FLAC) ---
+                Station {
                     id: "sector-space".to_string(),
                     name: "Sector Radio (Space FLAC)".to_string(),
-                    url: "http://sectorradio.ru:8000/space-flac".to_string(),
+                    url: "http://89.223.45.5:8000/space-flac".to_string(),
                     codec: "FLAC".to_string(),
                     sample_rate: 44100,
                     bit_depth: 16,
                     homepage: Some("https://sectorradio.ru".to_string()),
-                    tags: vec!["ambient".to_string(), "space".to_string(), "lossless".to_string()],
+                    tags: vec![
+                        "ambient".to_string(),
+                        "space".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sector-nota".to_string(),
+                    name: "Sector Radio (Classical Nota FLAC)".to_string(),
+                    url: "http://89.223.45.5:8000/nota-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://sectorradio.ru".to_string()),
+                    tags: vec!["classical".to_string(), "lossless".to_string()],
                     favorite: false,
                     rp_channel: None,
                 },
                 Station {
+                    id: "sector-80s".to_string(),
+                    name: "Sector Radio (80s Geny FLAC)".to_string(),
+                    url: "http://89.223.45.5:8000/geny-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://sectorradio.ru".to_string()),
+                    tags: vec![
+                        "80s".to_string(),
+                        "retro".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sector-10s".to_string(),
+                    name: "Sector Radio (10s Zed FLAC)".to_string(),
+                    url: "http://89.223.45.5:8000/zed-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://sectorradio.ru".to_string()),
+                    tags: vec![
+                        "electronic".to_string(),
+                        "pop".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sector-jazz".to_string(),
+                    name: "Sector Radio (Hi-Res Jazz FLAC 96kHz)".to_string(),
+                    url: "http://89.223.45.5:8000/jazz-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 96000,
+                    bit_depth: 24,
+                    homepage: Some("https://sectorradio.ru".to_string()),
+                    tags: vec![
+                        "jazz".to_string(),
+                        "hi-res".to_string(),
+                        "96khz".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                // --- Audiophile Lossless & Hi-Res Favorites ---
+                Station {
+                    id: "radio-calico".to_string(),
+                    name: "Radio Calico (Hi-Res 24-bit/48kHz)".to_string(),
+                    url: "https://stream.radio-calico.com/calico".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 24,
+                    homepage: Some("https://radio-calico.com".to_string()),
+                    tags: vec![
+                        "audiophile".to_string(),
+                        "hi-res".to_string(),
+                        "rock".to_string(),
+                        "pop".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "le-bon-mix".to_string(),
+                    name: "Le Bon Mix (HiFi FLAC)".to_string(),
+                    url: "https://stream10.xdevel.com/audio17s976748-2218/stream/icecast.audio"
+                        .to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://lebonmix.radio".to_string()),
+                    tags: vec![
+                        "eclectic".to_string(),
+                        "audiophile".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "blues-flac".to_string(),
+                    name: "Radio BluesFlac (Lossless)".to_string(),
+                    url: "https://streams.radiomast.io/radioblues-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("http://bluesflac.com".to_string()),
+                    tags: vec![
+                        "blues".to_string(),
+                        "lossless".to_string(),
+                        "audiophile".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "naim-radio".to_string(),
+                    name: "Naim Radio (FLAC)".to_string(),
+                    url: "http://mscp3.live-streams.nl:8360/flac.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://naimaudio.com".to_string()),
+                    tags: vec![
+                        "audiophile".to_string(),
+                        "eclectic".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "naim-jazz".to_string(),
+                    name: "Naim Jazz (FLAC)".to_string(),
+                    url: "http://mscp3.live-streams.nl:8340/jazz-flac.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://naimaudio.com".to_string()),
+                    tags: vec![
+                        "jazz".to_string(),
+                        "audiophile".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "naim-classical".to_string(),
+                    name: "Naim Classical (FLAC)".to_string(),
+                    url: "http://mscp3.live-streams.nl:8250/class-flac.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://naimaudio.com".to_string()),
+                    tags: vec![
+                        "classical".to_string(),
+                        "audiophile".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sveriges-p2".to_string(),
+                    name: "Sveriges Radio P2 (Classical FLAC)".to_string(),
+                    url: "https://live1.sr.se/p2-flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 24,
+                    homepage: Some("https://sverigesradio.se".to_string()),
+                    tags: vec![
+                        "classical".to_string(),
+                        "sweden".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "rondo-klasu-pro".to_string(),
+                    name: "Rondo Klasu Pro (Classical FLAC)".to_string(),
+                    url: "https://iradio.fi/klasupro.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://rondo.fi".to_string()),
+                    tags: vec![
+                        "classical".to_string(),
+                        "finland".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "smoothjazz-pl".to_string(),
+                    name: "SmoothJazz.com.pl (FLAC)".to_string(),
+                    url: "https://bcast.vigormultimedia.com:48888/sjcomplflac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://smoothjazz.com.pl".to_string()),
+                    tags: vec![
+                        "smoothjazz".to_string(),
+                        "jazz".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "hionline-pop".to_string(),
+                    name: "Hi On Line Radio (FLAC)".to_string(),
+                    url: "http://mscp2.live-streams.nl:8100/flac.flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://hionline.eu".to_string()),
+                    tags: vec![
+                        "pop".to_string(),
+                        "audiophile".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "dance-wave-flac".to_string(),
+                    name: "Dance Wave (FLAC)".to_string(),
+                    url: "http://dancewave.online/dance.flac.ogg".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://dancewave.online".to_string()),
+                    tags: vec![
+                        "dance".to_string(),
+                        "electronic".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "dance-wave-retro".to_string(),
+                    name: "Dance Wave Retro (FLAC)".to_string(),
+                    url: "http://retro.dancewave.online/retrodance.flac.ogg".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://dancewave.online".to_string()),
+                    tags: vec![
+                        "eurodance".to_string(),
+                        "90s".to_string(),
+                        "retro".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "radio-bias".to_string(),
+                    name: "Radio Bias (80s / Italo FLAC)".to_string(),
+                    url: "https://admin.biasradio.com/radio/8000/flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 24,
+                    homepage: Some("https://biasradio.com".to_string()),
+                    tags: vec![
+                        "80s".to_string(),
+                        "newwave".to_string(),
+                        "italo".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "radio-sputnik".to_string(),
+                    name: "Radio Sputnik (Underground House FLAC)".to_string(),
+                    url: "https://radiosputnik.nl:8443/flac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("http://radiosputnik.nl".to_string()),
+                    tags: vec![
+                        "house".to_string(),
+                        "electronic".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sanctuary-electro".to_string(),
+                    name: "Sanctuary Radio (Dark Electro FLAC)".to_string(),
+                    url: "http://66.94.113.88:8000/ultra_hq".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://sanctuaryradio.com".to_string()),
+                    tags: vec![
+                        "electro".to_string(),
+                        "industrial".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sanctuary-80s".to_string(),
+                    name: "Sanctuary Radio (80s Alternative FLAC)".to_string(),
+                    url: "http://66.94.113.88:8000/retro_ultra_hq".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://sanctuaryradio.com".to_string()),
+                    tags: vec![
+                        "80s".to_string(),
+                        "alternative".to_string(),
+                        "newwave".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "pure-lounge".to_string(),
+                    name: "Pure Lounge Radio (FLAC)".to_string(),
+                    url: "https://mscp4.live-streams.nl:8142/lounge.ogg".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://pureloungeradio.com".to_string()),
+                    tags: vec![
+                        "lounge".to_string(),
+                        "chillout".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "pure-classix".to_string(),
+                    name: "PureClassix Radio (FLAC)".to_string(),
+                    url: "https://mscp4.live-streams.nl:8142/flac.ogg".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://pureclassix.com".to_string()),
+                    tags: vec![
+                        "classic".to_string(),
+                        "oldies".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "sing-sing".to_string(),
+                    name: "Sing Sing (FLAC)".to_string(),
+                    url: "http://stream.sing-sing-bis.org:8000/singsingFlac".to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("http://sing-sing-bis.org".to_string()),
+                    tags: vec!["eclectic".to_string(), "lossless".to_string()],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "djam-radio".to_string(),
+                    name: "Djam Radio (FLAC)".to_string(),
+                    url: "https://stream10.xdevel.com/audio15s976748-2280/stream/icecast.audio"
+                        .to_string(),
+                    codec: "FLAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://djam.radio".to_string()),
+                    tags: vec![
+                        "eclectic".to_string(),
+                        "pop".to_string(),
+                        "lossless".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                // --- Radio France / FIP (High-Bitrate AAC) ---
+                Station {
                     id: "fip-paris".to_string(),
                     name: "FIP Radio Paris".to_string(),
-                    url: "https://icecast.radiofrance.fr/fip-midfi.mp3".to_string(),
+                    url: "https://icecast.radiofrance.fr/fip-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
+                    tags: vec![
+                        "jazz".to_string(),
+                        "eclectic".to_string(),
+                        "france".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "fip-jazz".to_string(),
+                    name: "FIP Jazz".to_string(),
+                    url: "https://icecast.radiofrance.fr/fipjazz-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
+                    tags: vec!["jazz".to_string(), "france".to_string()],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "fip-groove".to_string(),
+                    name: "FIP Groove".to_string(),
+                    url: "https://icecast.radiofrance.fr/fipgroove-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
+                    tags: vec!["funk".to_string(), "soul".to_string(), "groove".to_string()],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "fip-electro".to_string(),
+                    name: "FIP Electro".to_string(),
+                    url: "https://icecast.radiofrance.fr/fipelectro-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
+                    tags: vec!["electronic".to_string(), "downtempo".to_string()],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "fip-rock".to_string(),
+                    name: "FIP Rock".to_string(),
+                    url: "https://icecast.radiofrance.fr/fiprock-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
+                    tags: vec!["rock".to_string(), "indie".to_string()],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "france-musique".to_string(),
+                    name: "France Musique (Classical/Jazz)".to_string(),
+                    url: "https://icecast.radiofrance.fr/francemusique-hifi.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 48000,
+                    bit_depth: 16,
+                    homepage: Some("https://www.radiofrance.fr/francemusique".to_string()),
+                    tags: vec![
+                        "classical".to_string(),
+                        "jazz".to_string(),
+                        "france".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                // --- SomaFM Networks (High Bitrate 256k) ---
+                Station {
+                    id: "somafm-groovesalad".to_string(),
+                    name: "SomaFM Groove Salad".to_string(),
+                    url: "https://ice1.somafm.com/groovesalad-256-mp3".to_string(),
                     codec: "MP3".to_string(),
                     sample_rate: 44100,
                     bit_depth: 16,
-                    homepage: Some("https://www.radiofrance.fr/fip".to_string()),
-                    tags: vec!["jazz".to_string(), "eclectic".to_string(), "france".to_string()],
+                    homepage: Some("https://somafm.com/groovesalad".to_string()),
+                    tags: vec![
+                        "ambient".to_string(),
+                        "downtempo".to_string(),
+                        "chillout".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "somafm-dronezone".to_string(),
+                    name: "SomaFM Drone Zone".to_string(),
+                    url: "https://ice1.somafm.com/dronezone-256-mp3".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://somafm.com/dronezone".to_string()),
+                    tags: vec![
+                        "ambient".to_string(),
+                        "drone".to_string(),
+                        "space".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "somafm-defcon".to_string(),
+                    name: "SomaFM DEF CON Radio".to_string(),
+                    url: "https://ice1.somafm.com/defcon-256-mp3".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://somafm.com/defcon".to_string()),
+                    tags: vec![
+                        "electronic".to_string(),
+                        "hacker".to_string(),
+                        "cyberpunk".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "somafm-synphaera".to_string(),
+                    name: "SomaFM Synphaera Radio".to_string(),
+                    url: "https://ice1.somafm.com/synphaera-256-mp3".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://somafm.com/synphaera".to_string()),
+                    tags: vec![
+                        "space".to_string(),
+                        "ambient".to_string(),
+                        "electronic".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                // --- Iconic Cultural & Community Broadcasters ---
+                Station {
+                    id: "kexp-seattle".to_string(),
+                    name: "KEXP 90.3 Seattle".to_string(),
+                    url: "https://kexp.streamguys1.com/kexp160.aac".to_string(),
+                    codec: "AAC".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://kexp.org".to_string()),
+                    tags: vec![
+                        "indie".to_string(),
+                        "alternative".to_string(),
+                        "seattle".to_string(),
+                    ],
+                    favorite: true,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "nts-1".to_string(),
+                    name: "NTS Radio (Channel 1)".to_string(),
+                    url: "https://stream-relay-geo.ntslive.net/stream".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://nts.live".to_string()),
+                    tags: vec![
+                        "underground".to_string(),
+                        "eclectic".to_string(),
+                        "london".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "nts-2".to_string(),
+                    name: "NTS Radio (Channel 2)".to_string(),
+                    url: "https://stream-relay-geo.ntslive.net/stream2".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://nts.live".to_string()),
+                    tags: vec![
+                        "underground".to_string(),
+                        "experimental".to_string(),
+                        "london".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "kcrw-e24".to_string(),
+                    name: "KCRW Eclectic24".to_string(),
+                    url: "https://streams.kcrw.com/e24_mp3".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://kcrw.com".to_string()),
+                    tags: vec![
+                        "eclectic".to_string(),
+                        "indie".to_string(),
+                        "la".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "wfmu-main".to_string(),
+                    name: "WFMU 91.1 Freeform".to_string(),
+                    url: "https://stream0.wfmu.org/freeform-128k.mp3".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://wfmu.org".to_string()),
+                    tags: vec![
+                        "freeform".to_string(),
+                        "indie".to_string(),
+                        "jersey-city".to_string(),
+                    ],
+                    favorite: false,
+                    rp_channel: None,
+                },
+                Station {
+                    id: "dublab-la".to_string(),
+                    name: "dublab Los Angeles".to_string(),
+                    url: "https://dublab.out.airtime.pro/dublab_a".to_string(),
+                    codec: "MP3".to_string(),
+                    sample_rate: 44100,
+                    bit_depth: 16,
+                    homepage: Some("https://dublab.com".to_string()),
+                    tags: vec![
+                        "future-roots".to_string(),
+                        "eclectic".to_string(),
+                        "la".to_string(),
+                    ],
                     favorite: false,
                     rp_channel: None,
                 },
             ],
         }
+    }
+
+    /// Migrates legacy/defunct station URLs and merges newly introduced default stations.
+    pub fn migrate_and_merge_defaults(&mut self) -> bool {
+        let mut modified = false;
+        let defaults = Self::default_lossless_stations();
+
+        // 1. Fix known outdated or broken URLs in existing station configurations
+        for station in self.stations.iter_mut() {
+            if station.id == "czech-d-dur"
+                && (station.url.contains("radio.d-dur.cz") || station.url.contains("d-dur.cz"))
+            {
+                station.url = "http://amp.cesnet.cz:8000/cro-d-dur.flac".to_string();
+                station.sample_rate = 48000;
+                station.bit_depth = 24;
+                station.codec = "FLAC".to_string();
+                modified = true;
+            } else if station.id == "sector-space"
+                && (station.url.contains("sectorradio.ru:8000")
+                    || station.url.contains("sectorradio.ru"))
+            {
+                station.url = "http://89.223.45.5:8000/space-flac".to_string();
+                station.sample_rate = 44100;
+                station.bit_depth = 16;
+                station.codec = "FLAC".to_string();
+                modified = true;
+            } else if station.id == "fip-paris" && station.url.contains("fip-midfi.mp3") {
+                station.url = "https://icecast.radiofrance.fr/fip-hifi.aac".to_string();
+                station.codec = "AAC".to_string();
+                station.sample_rate = 48000;
+                modified = true;
+            } else if station.id == "mother-earth" {
+                // Mother Earth Radio ceased broadcasting; replace with Radio Calico (24-bit/48kHz)
+                station.id = "radio-calico".to_string();
+                station.name = "Radio Calico (Hi-Res 24-bit/48kHz)".to_string();
+                station.url = "https://stream.radio-calico.com/calico".to_string();
+                station.codec = "FLAC".to_string();
+                station.sample_rate = 48000;
+                station.bit_depth = 24;
+                station.homepage = Some("https://radio-calico.com".to_string());
+                station.tags = vec![
+                    "audiophile".to_string(),
+                    "hi-res".to_string(),
+                    "rock".to_string(),
+                    "pop".to_string(),
+                ];
+                modified = true;
+            }
+        }
+
+        // 2. Append newly added default stations if not already present in the catalog
+        for def_st in defaults.stations {
+            if !self.stations.iter().any(|s| s.id == def_st.id) {
+                self.stations.push(def_st);
+                modified = true;
+            }
+        }
+
+        modified
     }
 }
 
@@ -287,32 +1008,33 @@ impl ConfigManager {
             toml::from_str(&content).unwrap_or_default()
         } else {
             let default_cfg = AppConfig::default();
-            let content = toml::to_string_pretty(&default_cfg)
-                .map_err(ResoError::TomlSer)?;
+            let content = toml::to_string_pretty(&default_cfg).map_err(ResoError::TomlSer)?;
             fs::write(&config_file, content)?;
             default_cfg
         };
 
         let stations_file = dir.join("stations.toml");
-        let catalog = if stations_file.exists() {
+        let (catalog, needs_save) = if stations_file.exists() {
             let content = fs::read_to_string(&stations_file)?;
-            match toml::from_str(&content) {
-                Ok(cat) => cat,
+            match toml::from_str::<StationsCatalog>(&content) {
+                Ok(mut cat) => {
+                    let migrated = cat.migrate_and_merge_defaults();
+                    (cat, migrated)
+                }
                 Err(_) => {
                     let default_cat = StationsCatalog::default_lossless_stations();
-                    let serialized = toml::to_string_pretty(&default_cat)
-                        .map_err(ResoError::TomlSer)?;
-                    fs::write(&stations_file, serialized)?;
-                    default_cat
+                    (default_cat, true)
                 }
             }
         } else {
             let default_cat = StationsCatalog::default_lossless_stations();
-            let serialized = toml::to_string_pretty(&default_cat)
-                .map_err(ResoError::TomlSer)?;
-            fs::write(&stations_file, serialized)?;
-            default_cat
+            (default_cat, true)
         };
+
+        if needs_save {
+            let serialized = toml::to_string_pretty(&catalog).map_err(ResoError::TomlSer)?;
+            fs::write(&stations_file, serialized)?;
+        }
 
         // Ensure recording directory exists
         let _ = fs::create_dir_all(&config.record_dir);
@@ -327,8 +1049,7 @@ impl ConfigManager {
     /// Saves the current configuration to `config.toml`.
     pub fn save_config(&self) -> Result<()> {
         let config_file = self.config_dir.join("config.toml");
-        let content = toml::to_string_pretty(&self.config)
-            .map_err(ResoError::TomlSer)?;
+        let content = toml::to_string_pretty(&self.config).map_err(ResoError::TomlSer)?;
         fs::write(config_file, content)?;
         Ok(())
     }
@@ -336,8 +1057,7 @@ impl ConfigManager {
     /// Saves the current station catalog to `stations.toml`.
     pub fn save_stations(&self) -> Result<()> {
         let stations_file = self.config_dir.join("stations.toml");
-        let content = toml::to_string_pretty(&self.catalog)
-            .map_err(ResoError::TomlSer)?;
+        let content = toml::to_string_pretty(&self.catalog).map_err(ResoError::TomlSer)?;
         fs::write(stations_file, content)?;
         Ok(())
     }
@@ -359,7 +1079,9 @@ impl ConfigManager {
             .open(&file_path)?;
 
         let now = Local::now().format("%Y-%m-%d %H:%M:%S");
-        let album_str = album.map(|a| format!(" | Album: *{}*", a)).unwrap_or_default();
+        let album_str = album
+            .map(|a| format!(" | Album: *{}*", a))
+            .unwrap_or_default();
         let codec_str = codec.unwrap_or("Lossless");
         let rate_str = sample_rate
             .map(|r| format!(" ({})", crate::util::format_sample_rate(r)))
@@ -382,16 +1104,29 @@ impl ConfigManager {
             return Some(s);
         }
         // Case-insensitive ID match
-        if let Some(s) = self.catalog.stations.iter().find(|s| s.id.to_lowercase() == q_lower) {
+        if let Some(s) = self
+            .catalog
+            .stations
+            .iter()
+            .find(|s| s.id.to_lowercase() == q_lower)
+        {
             return Some(s);
         }
         // Substring / Name match
-        self.catalog.stations.iter().find(|s| s.name.to_lowercase().contains(&q_lower))
+        self.catalog
+            .stations
+            .iter()
+            .find(|s| s.name.to_lowercase().contains(&q_lower))
     }
 
     /// Toggles the favorite status of a station.
     pub fn toggle_favorite(&mut self, station_id: &str) -> bool {
-        if let Some(s) = self.catalog.stations.iter_mut().find(|s| s.id == station_id) {
+        if let Some(s) = self
+            .catalog
+            .stations
+            .iter_mut()
+            .find(|s| s.id == station_id)
+        {
             s.favorite = !s.favorite;
             let fav = s.favorite;
             let _ = self.save_stations();
@@ -403,7 +1138,12 @@ impl ConfigManager {
 
     /// Adds a new station to the catalog and persists it.
     pub fn add_station(&mut self, station: Station) -> Result<()> {
-        if let Some(pos) = self.catalog.stations.iter().position(|s| s.id == station.id) {
+        if let Some(pos) = self
+            .catalog
+            .stations
+            .iter()
+            .position(|s| s.id == station.id)
+        {
             self.catalog.stations[pos] = station;
         } else {
             self.catalog.stations.push(station);

@@ -1,7 +1,9 @@
 //! 3-Stage Audiophile Pipeline Verification & Diagnostics Engine.
 
 use crate::events::AudioStreamParams;
-use crate::inspector::alsa::{read_dac_capabilities, read_hw_params, scan_alsa_cards, AlsaHwParams, DacCapabilities};
+use crate::inspector::alsa::{
+    read_dac_capabilities, read_hw_params, scan_alsa_cards, AlsaHwParams, DacCapabilities,
+};
 use crate::inspector::pipewire::{inspect_pipewire_graph, CulpritClient, PipeWireSink};
 use crate::util::format_sample_rate;
 use serde::{Deserialize, Serialize};
@@ -171,24 +173,61 @@ impl PipelineStatus {
 
         // 1. Source Stage
         out.push_str("1. STREAM SOURCE (MPV DECODER)\n");
-        out.push_str(&format!("   Codec:        {}\n", if self.source_codec.is_empty() { "None" } else { &self.source_codec }));
-        out.push_str(&format!("   Sample Rate:  {}\n", format_sample_rate(self.source_rate)));
-        out.push_str(&format!("   Bit Depth:    {}\n", self.source_bit_depth.map(|b| format!("{}-bit", b)).unwrap_or_else(|| "16/24-bit VBR".to_string())));
-        out.push_str(&format!("   Channels:     {}\n", if self.source_channels == 0 { 2 } else { self.source_channels }));
-        out.push_str(&format!("   MPV Volume:   {:.1}% (Bit-perfect requires 100%)\n\n", self.mpv_volume));
+        out.push_str(&format!(
+            "   Codec:        {}\n",
+            if self.source_codec.is_empty() {
+                "None"
+            } else {
+                &self.source_codec
+            }
+        ));
+        out.push_str(&format!(
+            "   Sample Rate:  {}\n",
+            format_sample_rate(self.source_rate)
+        ));
+        out.push_str(&format!(
+            "   Bit Depth:    {}\n",
+            self.source_bit_depth
+                .map(|b| format!("{}-bit", b))
+                .unwrap_or_else(|| "16/24-bit VBR".to_string())
+        ));
+        out.push_str(&format!(
+            "   Channels:     {}\n",
+            if self.source_channels == 0 {
+                2
+            } else {
+                self.source_channels
+            }
+        ));
+        out.push_str(&format!(
+            "   MPV Volume:   {:.1}% (Bit-perfect requires 100%)\n\n",
+            self.mpv_volume
+        ));
 
         // 2. PipeWire Stage
         out.push_str("2. PIPEWIRE AUDIO GRAPH\n");
         if let Some(sink) = &self.pw_sink {
-            out.push_str(&format!("   Sink Node:    {} [{}]\n", sink.description, sink.name));
-            out.push_str(&format!("   Sink Rate:    {}\n", format_sample_rate(self.pw_sink_rate.unwrap_or(0))));
-            out.push_str(&format!("   Sink Format:  {}\n", sink.format.as_deref().unwrap_or("Native")));
+            out.push_str(&format!(
+                "   Sink Node:    {} [{}]\n",
+                sink.description, sink.name
+            ));
+            out.push_str(&format!(
+                "   Sink Rate:    {}\n",
+                format_sample_rate(self.pw_sink_rate.unwrap_or(0))
+            ));
+            out.push_str(&format!(
+                "   Sink Format:  {}\n",
+                sink.format.as_deref().unwrap_or("Native")
+            ));
         } else {
             out.push_str("   Sink Node:    None detected\n");
         }
         out.push_str(&format!("   Allowed Rates: {:?}\n", self.pw_allowed_rates));
         if !self.pw_dsp_filters.is_empty() {
-            out.push_str(&format!("   DSP Filters:  WARNING: {:?}\n", self.pw_dsp_filters));
+            out.push_str(&format!(
+                "   DSP Filters:  WARNING: {:?}\n",
+                self.pw_dsp_filters
+            ));
         } else {
             out.push_str("   DSP Filters:  None (Bit-exact path)\n");
         }
@@ -196,16 +235,41 @@ impl PipelineStatus {
 
         // 3. ALSA Hardware Stage
         out.push_str("3. HARDWARE DAC / ALSA\n");
-        out.push_str(&format!("   DAC Device:   {}\n", self.alsa_card_name.as_deref().unwrap_or("Unknown")));
+        out.push_str(&format!(
+            "   DAC Device:   {}\n",
+            self.alsa_card_name.as_deref().unwrap_or("Unknown")
+        ));
         if let Some(hw) = &self.alsa_hw_params {
-            out.push_str(&format!("   ALSA Status:  {}\n", if hw.is_active { "Active (Running)" } else { "Idle / Suspended" }));
-            out.push_str(&format!("   HW Rate:      {}\n", format_sample_rate(hw.rate.unwrap_or(0))));
-            out.push_str(&format!("   HW Format:    {}\n", hw.format.as_deref().unwrap_or("Unknown")));
-            out.push_str(&format!("   Buffer Size:  {} periods\n", hw.buffer_size.unwrap_or(0)));
+            out.push_str(&format!(
+                "   ALSA Status:  {}\n",
+                if hw.is_active {
+                    "Active (Running)"
+                } else {
+                    "Idle / Suspended"
+                }
+            ));
+            out.push_str(&format!(
+                "   HW Rate:      {}\n",
+                format_sample_rate(hw.rate.unwrap_or(0))
+            ));
+            out.push_str(&format!(
+                "   HW Format:    {}\n",
+                hw.format.as_deref().unwrap_or("Unknown")
+            ));
+            out.push_str(&format!(
+                "   Buffer Size:  {} periods\n",
+                hw.buffer_size.unwrap_or(0)
+            ));
         }
         if let Some(caps) = &self.dac_capabilities {
-            out.push_str(&format!("   DAC Supported Rates:  {:?}\n", caps.supported_rates));
-            out.push_str(&format!("   DAC Supported Depths: {:?} bits\n", caps.supported_bit_depths));
+            out.push_str(&format!(
+                "   DAC Supported Rates:  {:?}\n",
+                caps.supported_rates
+            ));
+            out.push_str(&format!(
+                "   DAC Supported Depths: {:?} bits\n",
+                caps.supported_bit_depths
+            ));
         }
         out.push('\n');
 
@@ -214,11 +278,20 @@ impl PipelineStatus {
         match &self.verdict {
             Some(BitPerfectVerdict::NativeBitPerfect) => {
                 out.push_str(" STATUS: [ PASS ] ✓ BIT-PERFECT DIRECT PLAYBACK\n");
-                out.push_str(" Native source rate matches PipeWire sink and hardware DAC clocks.\n");
+                out.push_str(
+                    " Native source rate matches PipeWire sink and hardware DAC clocks.\n",
+                );
             }
-            Some(BitPerfectVerdict::Resampled { source_rate, sink_rate, culprit }) => {
+            Some(BitPerfectVerdict::Resampled {
+                source_rate,
+                sink_rate,
+                culprit,
+            }) => {
                 out.push_str(" STATUS: [ WARNING ] ⚠ RESAMPLING DETECTED\n");
-                out.push_str(&format!(" Stream ({} Hz) is being resampled to ({} Hz).\n", source_rate, sink_rate));
+                out.push_str(&format!(
+                    " Stream ({} Hz) is being resampled to ({} Hz).\n",
+                    source_rate, sink_rate
+                ));
                 if let Some(c) = culprit {
                     out.push_str(&format!(" CULPRIT: {}\n", c.description));
                 }
@@ -226,11 +299,16 @@ impl PipelineStatus {
             Some(BitPerfectVerdict::VolumeDegraded { mpv_volume }) => {
                 out.push_str(" STATUS: [ WARNING ] ⚠ MPV SOFTWARE VOLUME ACTIVE\n");
                 out.push_str(&format!(" MPV volume is at {:.1}%. Set MPV volume to 100% to avoid truncating bit depth.\n", mpv_volume));
-                out.push_str(" Adjust listening volume using hardware PipeWire control (`wpctl`).\n");
+                out.push_str(
+                    " Adjust listening volume using hardware PipeWire control (`wpctl`).\n",
+                );
             }
             Some(BitPerfectVerdict::DspFilterActive { filters }) => {
                 out.push_str(" STATUS: [ WARNING ] ⚠ ACTIVE DSP / EQUALIZER DETECTED\n");
-                out.push_str(&format!(" PipeWire software filters active: {:?}\n", filters));
+                out.push_str(&format!(
+                    " PipeWire software filters active: {:?}\n",
+                    filters
+                ));
             }
             Some(BitPerfectVerdict::Idle) | None => {
                 out.push_str(" STATUS: [ IDLE ] Audio pipeline is currently paused or stopped.\n");
