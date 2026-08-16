@@ -1,0 +1,29 @@
+[package]
+name = "reso"
+version = "0.1.0"
+edition = "2021"
+description = "Lossless Audiophile Internet Radio Player & PipeWire Inspector for Arch Linux"
+authors = ["Jude <jude@archlinux>"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "cargo"] }
+ratatui = { version = "0.29.0", features = ["all-widgets", "crossterm"] }
+crossterm = { version = "0.28.1", features = ["event-stream"] }
+ratatui-image = { version = "3.0", default-features = false, features = ["crossterm", "image-defaults"] }
+image = { version = "0.25.2", default-features = false, features = ["jpeg", "png", "webp"] }
+tokio = { version = "1.40", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+futures-util = "0.3"
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+thiserror = "1.0"
+anyhow = "1.0"
+arboard = "3.4"
+directories = "5.0"
+chrono = { version = "0.4.38", features = ["serde"] }
+humantime = "2.1"
+md-5 = "0.10"
+regex = "1.10"
+zbus = { version = "4.4", features = ["tokio"] }
