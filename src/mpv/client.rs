@@ -199,8 +199,12 @@ impl MpvClient {
                                     _ => {}
                                 }
                             }
+                            "start-file" => {
+                                is_idle = false;
+                            }
                             "playback-restart" => {
-                                if !is_paused && !is_idle {
+                                is_idle = false;
+                                if !is_paused {
                                     current_state = PlaybackState::Playing;
                                     let _ = event_tx_clone.send(MpvEvent::State(current_state));
                                 }
@@ -225,7 +229,7 @@ impl MpvClient {
 
         // Register Property Observers
         client.observe_property(OBS_PAUSE, "pause").await?;
-        client.observe_property(OBS_IDLE, "core-idle").await?;
+        client.observe_property(OBS_IDLE, "idle-active").await?;
         client.observe_property(OBS_AUDIO_PARAMS, "audio-params").await?;
         client.observe_property(OBS_MEDIA_TITLE, "media-title").await?;
         client.observe_property(OBS_ICY_TITLE, "icy-title").await?;
@@ -276,6 +280,7 @@ impl MpvClient {
             json!("replace"),
         ])
         .await?;
+        let _ = self.resume().await;
         Ok(())
     }
 

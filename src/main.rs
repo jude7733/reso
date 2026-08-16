@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
 async fn get_mpv_client(config_manager: &ConfigManager) -> Result<(MpvClient, tokio::sync::broadcast::Receiver<events::MpvEvent>)> {
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
     mpv_proc.ensure_running().await?;
+    mpv_proc.disown();
     MpvClient::connect(config_manager.config.socket_path.clone()).await
 }
 

@@ -11,7 +11,7 @@ use crate::mpv::client::MpvClient;
 use crate::mpv::record::StreamRecorder;
 use crate::tui::cover::CoverArtManager;
 use crate::tui::visualizer::VisualizerState;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -195,6 +195,11 @@ impl App {
 
     /// Handles keyboard input from crossterm.
     pub async fn handle_key_event(&mut self, key: KeyEvent) -> Result<()> {
+        // Only handle key press events (ignore key release / repeat duplicates)
+        if key.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
         // Help modal toggle
         if self.show_help_modal {
             if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') || key.code == KeyCode::Char('q') {

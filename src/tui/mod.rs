@@ -83,6 +83,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                 match action {
                     AppAction::Play(station) => {
                         let _ = app.mpv_client.load_file(&station.url).await;
+                        let _ = app.mpv_client.resume().await;
                         app.current_station = Some(station);
                         app.update_mpris();
                     }
@@ -106,6 +107,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             app.station_list_index = (app.station_list_index + 1) % total;
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = app.mpv_client.load_file(&st.url).await;
+                            let _ = app.mpv_client.resume().await;
                             app.current_station = Some(st);
                             app.update_mpris();
                         }
@@ -120,6 +122,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             }
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = app.mpv_client.load_file(&st.url).await;
+                            let _ = app.mpv_client.resume().await;
                             app.current_station = Some(st);
                             app.update_mpris();
                         }

@@ -56,7 +56,7 @@ impl MpvProcessManager {
         let child = Command::new("mpv")
             .arg("--idle")
             .arg(&socket_arg)
-            .arg("--ao=pipewire")
+            .arg("--ao=pipewire,pulse,alsa,")
             .arg("--audio-display=no")
             .arg("--no-video")
             .arg("--volume=100")
@@ -86,6 +86,11 @@ impl MpvProcessManager {
             "Timed out waiting for MPV IPC socket at {}",
             self.socket_path.display()
         )))
+    }
+
+    /// Relinquishes ownership of the spawned process so it continues running when dropped.
+    pub fn disown(&mut self) {
+        self.owns_process.store(false, Ordering::SeqCst);
     }
 
     /// Returns a reference to the socket path.
