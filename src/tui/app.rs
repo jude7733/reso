@@ -1290,7 +1290,12 @@ impl App {
 
     /// Re-evaluates the 3-stage audiophile pipeline diagnostics.
     pub fn refresh_pipeline_diagnostics(&mut self) {
-        self.pipeline_status = PipelineStatus::evaluate(&self.stream_params, 100.0);
+        let media_rate = self
+            .current_station
+            .as_ref()
+            .map(|s| s.sample_rate)
+            .filter(|&r| r > 0);
+        self.pipeline_status = PipelineStatus::evaluate(&self.stream_params, 100.0, media_rate);
     }
 
     /// Updates shared MPRIS2 D-Bus state.

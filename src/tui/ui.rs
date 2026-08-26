@@ -153,7 +153,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let badge_border_color;
     match &app.pipeline_status.verdict {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
-            let rate_str = format_sample_rate(app.pipeline_status.source_rate);
+            let rate_str = format_sample_rate(app.pipeline_status.reference_rate());
             // Subtle pulse between two greens for a "live" feel
             let bg = if (app.tick_count / 10) % 2 == 0 {
                 Color::Rgb(0, 140, 60)
@@ -741,7 +741,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.pipeline_status;
 
-    let src_rate = format_sample_rate(status.source_rate);
+    let src_rate = format_sample_rate(status.reference_rate());
     let pw_rate = format_sample_rate(status.pw_sink_rate.unwrap_or(0));
     let dac_rate = format_sample_rate(
         status
@@ -1032,9 +1032,9 @@ fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.pipeline_status;
     let (border_color, title_badge, title_style, desc_lines) = match &status.verdict {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
-            let rate_str = format_sample_rate(status.source_rate);
-            let pw_sink_rate_str = format_sample_rate(status.pw_sink_rate.unwrap_or(status.source_rate));
-            let dac_rate_str = format_sample_rate(status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or(status.source_rate));
+            let rate_str = format_sample_rate(status.reference_rate());
+            let pw_sink_rate_str = format_sample_rate(status.pw_sink_rate.unwrap_or_else(|| status.reference_rate()));
+            let dac_rate_str = format_sample_rate(status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or_else(|| status.reference_rate()));
             (
                 Color::Green,
                 " [✓ DIRECT BIT-PERFECT PLAYBACK] ",
@@ -1174,7 +1174,7 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
     } else {
         &status.source_codec
     };
-    let sample_rate = format_sample_rate(status.source_rate);
+    let sample_rate = format_sample_rate(status.reference_rate());
     let bit_depth = status
         .source_bit_depth
         .map(|b| format!("{}-bit", b))
@@ -1259,7 +1259,8 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_else(|| "No active sink".to_string());
     let sink_rate_val = status.pw_sink_rate.unwrap_or(0);
     let sink_rate = format_sample_rate(sink_rate_val);
-    let sink_rate_color = if sink_rate_val == status.source_rate && status.source_rate > 0 {
+    let ref_rate = status.reference_rate();
+    let sink_rate_color = if sink_rate_val == ref_rate && ref_rate > 0 {
         Color::Green
     } else if sink_rate_val > 0 {
         Color::Yellow
@@ -1322,7 +1323,7 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                if sink_rate_val == status.source_rate && status.source_rate > 0 {
+                if sink_rate_val == ref_rate && ref_rate > 0 {
                     " [MATCH]"
                 } else {
                     ""
@@ -1384,7 +1385,7 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
     let hw = status.alsa_hw_params.as_ref();
     let hw_rate_val = hw.and_then(|h| h.rate).unwrap_or(0);
     let hw_rate = format_sample_rate(hw_rate_val);
-    let hw_rate_color = if hw_rate_val == status.source_rate && status.source_rate > 0 {
+    let hw_rate_color = if hw_rate_val == ref_rate && ref_rate > 0 {
         Color::Green
     } else if hw_rate_val > 0 {
         Color::Yellow
@@ -1424,7 +1425,7 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                if hw_rate_val == status.source_rate && status.source_rate > 0 {
+                if hw_rate_val == ref_rate && ref_rate > 0 {
                     " [MATCH]"
                 } else {
                     ""

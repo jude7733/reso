@@ -63,8 +63,14 @@ impl AudioCapture {
         let stop_flag = self.stop_flag.clone();
         let samples_buf = self.samples.clone();
 
-        // 1. Try launching parec targeting the default playback monitor source
+        // 1. Try launching parec targeting the default playback monitor source.
+        // We set node.passive=true and media.role=monitor so this capture stream never
+        // forces PipeWire to resample or locks the audio graph clock.
         let parec_child = Command::new("parec")
+            .arg("--client-name=reso-visualizer")
+            .arg("--stream-name=spectrum-analyzer")
+            .arg("--property=node.passive=true")
+            .arg("--property=media.role=monitor")
             .arg("--rate=44100")
             .arg("--channels=2")
             .arg("--format=s16le")
@@ -78,8 +84,10 @@ impl AudioCapture {
         let mut child = match parec_child {
             Ok(c) => c,
             Err(_) => {
-                // 2. Fallback to pw-record targeting @DEFAULT_MONITOR@ or default capture
+                // 2. Fallback to pw-record targeting @DEFAULT_MONITOR@ with passive node flag
                 match Command::new("pw-record")
+                    .arg("-P")
+                    .arg("{ node.passive = true, application.name = \"reso-visualizer\", media.role = \"monitor\" }")
                     .arg("--raw")
                     .arg("--rate")
                     .arg("44100")

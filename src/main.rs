@@ -293,7 +293,7 @@ async fn handle_cycle_station(config_manager: &ConfigManager, forward: bool) -> 
 /// Handles `reso current`.
 async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -> Result<()> {
     let (_client, _rx) = get_mpv_client(config_manager).await?;
-    let status = PipelineStatus::evaluate(&AudioStreamParams::default(), 100.0);
+    let status = PipelineStatus::evaluate(&AudioStreamParams::default(), 100.0, None);
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
@@ -403,6 +403,7 @@ async fn handle_inspect_command(_config_manager: &ConfigManager, as_json: bool) 
             bitrate_kbps: Some(920),
         },
         100.0,
+        Some(44100),
     );
 
     if as_json {

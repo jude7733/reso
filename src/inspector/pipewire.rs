@@ -252,7 +252,12 @@ pub fn parse_pw_dump_json(val: &Value, target_source_rate: Option<u32>) -> PipeW
             if sink_rate != target_rate {
                 // Find other running streams that might be locking the graph to sink_rate
                 for stream in &report.all_active_streams {
-                    if !stream.is_mpv && stream.is_running {
+                    let is_reso = stream.is_mpv
+                        || stream.app_name.to_lowercase().contains("reso")
+                        || stream.binary.to_lowercase().contains("reso")
+                        || stream.name.to_lowercase().contains("reso");
+
+                    if !is_reso && stream.is_running {
                         let name = if !stream.app_name.is_empty() {
                             stream.app_name.clone()
                         } else if !stream.binary.is_empty() {
