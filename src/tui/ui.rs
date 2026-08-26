@@ -149,14 +149,23 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    // Bit-Perfect Badge
+    // Bit-Perfect Badge — vivid colored pill with background
+    let badge_border_color;
     match &app.pipeline_status.verdict {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
             let rate_str = format_sample_rate(app.pipeline_status.source_rate);
+            // Subtle pulse between two greens for a "live" feel
+            let bg = if (app.tick_count / 10) % 2 == 0 {
+                Color::Rgb(0, 140, 60)
+            } else {
+                Color::Rgb(0, 160, 70)
+            };
+            badge_border_color = Color::Green;
             badge_spans.push(Span::styled(
-                format!(" [✓ BIT-PERFECT: {}] ", rate_str),
+                format!(" ✓ BIT-PERFECT: {} ", rate_str),
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::White)
+                    .bg(bg)
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -165,35 +174,44 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             sink_rate,
             ..
         }) => {
+            badge_border_color = Color::Yellow;
             badge_spans.push(Span::styled(
                 format!(
-                    " [⚠ RESAMPLED: {}→{}] ",
+                    " ⚠ RESAMPLED: {}→{} ",
                     format_sample_rate(*source_rate),
                     format_sample_rate(*sink_rate)
                 ),
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::VolumeDegraded { .. }) => {
+            badge_border_color = Color::Yellow;
             badge_spans.push(Span::styled(
-                " [⚠ VOL < 100%] ",
+                " ⚠ VOL < 100% ",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::DspFilterActive { .. }) => {
+            badge_border_color = Color::Red;
             badge_spans.push(Span::styled(
-                " [⚠ DSP ACTIVE] ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                " ⚠ DSP ACTIVE ",
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
         _ => {
+            badge_border_color = Color::DarkGray;
             badge_spans.push(Span::styled(
-                " [STANDBY] ",
-                Style::default().fg(Color::DarkGray),
+                " ■ STANDBY ",
+                Style::default().fg(Color::Gray).bg(Color::Rgb(40, 40, 40)),
             ));
         }
     }
@@ -204,7 +222,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(badge_border_color)),
         );
     f.render_widget(badges_widget, chunks[2]);
 }
