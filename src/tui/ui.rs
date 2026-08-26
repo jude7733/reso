@@ -46,7 +46,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // Render Modals if active
     match &app.modal_state {
-        ModalState::Help => render_help_modal(f, area),
+        ModalState::Help => render_help_modal(f, app, area),
         ModalState::AddStation(state) => render_add_station_modal(f, state, app.tick_count, area),
         ModalState::EditStation(state) => render_edit_station_modal(f, state, area),
         ModalState::ConfirmDeleteStation { station_name, .. } => {
@@ -444,7 +444,7 @@ fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
     render_audio_path_diagram(f, app, chunks[1]);
 }
 
-/// Renders the unified Now Playing card with large cover art, music player typography, and individual format pills.
+/// Renders the unified Now Playing card with large cover art, music player typography, and individual format pills in a vertical layout.
 fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
     let is_playing = app.playback_state == PlaybackState::Playing;
     let card_border_color = if is_playing {
@@ -462,51 +462,9 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
     let inner_area = main_block.inner(area);
     f.render_widget(main_block, area);
 
-    // Terminal characters have ~1:2 width:height ratio, so square image width = inner_height * 2
-    let max_art_width = (inner_area.width * 48) / 100;
-    let square_art_width = (inner_area.height * 2).min(max_art_width).max(8);
-
-    let inner_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(square_art_width), // Direct square Album Art
-            Constraint::Length(2),                // Padding separator
-            Constraint::Min(20),                  // Track details & format pills
-        ])
-        .split(inner_area);
-
-    // Vertically center Cover Art directly into the left side of Now Playing
-    let img_height = square_art_width / 2;
-    let art_y_offset = (inner_chunks[0].height.saturating_sub(img_height)) / 2;
-    let art_area = Rect {
-        x: inner_chunks[0].x,
-        y: inner_chunks[0].y + art_y_offset,
-        width: inner_chunks[0].width,
-        height: img_height.min(inner_chunks[0].height),
-    };
-    app.cover_art_manager.render(art_area, f.buffer_mut());
-
-    // Track Metadata & Music Player Vibe
-    let station_name = app
-        .current_station
-        .as_ref()
-        .map(|s| s.name.clone())
-        .unwrap_or_else(|| "No Station Selected".to_string());
-
-    let track_title = app.track_metadata.title.clone().unwrap_or_else(|| {
-        app.track_metadata
-            .raw_title
-            .clone()
-            .unwrap_or_else(|| "No Track Playing".to_string())
-    });
-
-    let artist_name = app.track_metadata.artist.clone();
-
-    let album_year = match (&app.track_metadata.album, &app.track_metadata.year) {
-        (Some(alb), Some(yr)) => format!("{} ({})", alb, yr),
-        (Some(alb), None) => alb.clone(),
-        _ => String::new(),
-    };
+    if inner_area.width < 10 || inner_area.height < 3 {
+        return;
+    }
 
     // Playback State Badge
     let playback_badge = match app.playback_state {
@@ -539,55 +497,63 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|s| s.favorite)
         .unwrap_or(false);
     let fav_span = if is_fav {
-        Span::styled(
+        Some(Span::styled(
             " ★ FAVORITE ",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
-        )
+        ))
     } else {
-        Span::raw("")
+        None
     };
 
-    // Bit-Perfect Signal verdict badge
-    let verdict_span = match &app.pipeline_status.verdict {
-        Some(BitPerfectVerdict::NativeBitPerfect) => {
-            let rate_str = format_sample_rate(app.pipeline_status.source_rate);
-            Span::styled(
-                format!(" [✓ BIT-PERFECT: {}] ", rate_str),
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            )
-        }
-        Some(BitPerfectVerdict::Resampled {
-            source_rate,
-            sink_rate,
-            ..
-        }) => Span::styled(
-            format!(
-                " [⚠ RESAMPLED: {}→{}] ",
-                format_sample_rate(*source_rate),
-                format_sample_rate(*sink_rate)
-            ),
+    let rec_badge = if app.is_recording {
+        Some(Span::styled(
+            " [● REC] ",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::White)
+                .bg(Color::Red)
                 .add_modifier(Modifier::BOLD),
-        ),
-        Some(BitPerfectVerdict::VolumeDegraded { .. }) => Span::styled(
-            " [⚠ VOL < 100%] ",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Some(BitPerfectVerdict::DspFilterActive { .. }) => Span::styled(
-            " [⚠ DSP ACTIVE] ",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        ),
-        _ => Span::styled(" [STANDBY] ", Style::default().fg(Color::DarkGray)),
+        ))
+    } else {
+        None
     };
 
-    // Individual Format Component Pills
+    let sleep_badge = app.sleep_timer_secs_remaining.map(|s| {
+        let mins = s / 60;
+        let secs = s % 60;
+        Span::styled(
+            format!(" ⏳ {:02}:{:02} ", mins, secs),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(240, 180, 50))
+                .add_modifier(Modifier::BOLD),
+        )
+    });
+
+    // Track Metadata & Music Player Typography
+    let station_name = app
+        .current_station
+        .as_ref()
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "No Station Selected".to_string());
+
+    let track_title = app.track_metadata.title.clone().unwrap_or_else(|| {
+        app.track_metadata
+            .raw_title
+            .clone()
+            .unwrap_or_else(|| "No Track Playing".to_string())
+    });
+
+    let artist_name = app.track_metadata.artist.clone();
+
+    let album_year = match (&app.track_metadata.album, &app.track_metadata.year) {
+        (Some(alb), Some(yr)) => format!("{} ({})", alb, yr),
+        (Some(alb), None) => alb.clone(),
+        _ => String::new(),
+    };
+
+    // Format Spec Pills
     let codec_str = if app.stream_params.codec.is_empty() {
         "FLAC"
     } else {
@@ -650,51 +616,59 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         None
     };
 
-    // Assemble Music Player Vibe Content
-    let mut text = Vec::new();
+    // Assemble Metadata lines
+    let mut meta_lines = Vec::new();
 
-    // Line 1: Header status row
+    // Line 1: Header status badges
     let mut header_spans = vec![playback_badge];
-    if is_fav {
+    if let Some(f_span) = fav_span {
         header_spans.push(Span::raw(" "));
-        header_spans.push(fav_span);
+        header_spans.push(f_span);
     }
-    header_spans.push(Span::raw("  "));
-    header_spans.push(verdict_span);
-    text.push(Line::from(header_spans));
-
-    text.push(Line::raw(""));
+    if let Some(r_span) = rec_badge {
+        header_spans.push(Span::raw(" "));
+        header_spans.push(r_span);
+    }
+    if let Some(s_span) = sleep_badge {
+        header_spans.push(Span::raw(" "));
+        header_spans.push(s_span);
+    }
+    meta_lines.push(Line::from(header_spans));
 
     // Line 2: Track Title (Hero Element)
-    text.push(Line::from(vec![Span::styled(
+    meta_lines.push(Line::from(vec![Span::styled(
         track_title,
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     )]));
 
-    // Line 3: Artist (only if present and not empty/placeholder)
+    // Line 3: Artist & Album info
+    let mut artist_spans = Vec::new();
     if let Some(art) = artist_name {
         if !art.trim().is_empty() && art != "—" && art != "-" {
-            text.push(Line::from(vec![Span::styled(
+            artist_spans.push(Span::styled("♪ ", Style::default().fg(Color::Green)));
+            artist_spans.push(Span::styled(
                 art,
                 Style::default()
                     .fg(Color::Rgb(100, 230, 160))
                     .add_modifier(Modifier::BOLD),
-            )]));
+            ));
         }
     }
-
-    // Line 4: Album & Year (only if present)
     if !album_year.is_empty() && album_year != "—" {
-        text.push(Line::from(vec![
-            Span::styled("💿 ", Style::default().fg(Color::DarkGray)),
-            Span::styled(album_year, Style::default().fg(Color::Gray)),
-        ]));
+        if !artist_spans.is_empty() {
+            artist_spans.push(Span::raw("  "));
+        }
+        artist_spans.push(Span::styled("💿 ", Style::default().fg(Color::DarkGray)));
+        artist_spans.push(Span::styled(album_year, Style::default().fg(Color::Gray)));
+    }
+    if !artist_spans.is_empty() {
+        meta_lines.push(Line::from(artist_spans));
     }
 
-    // Line 5: Station Source
-    text.push(Line::from(vec![
+    // Line 4: Station Name
+    meta_lines.push(Line::from(vec![
         Span::styled("📻 ", Style::default().fg(Color::Cyan)),
         Span::styled(
             station_name,
@@ -704,55 +678,45 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         ),
     ]));
 
-    text.push(Line::raw(""));
-
-    // Line 6: Format Component Pills (Wrap/split cleanly based on available width to prevent clipping)
-    let meta_width = inner_chunks[2].width as usize;
-    if meta_width >= 46 {
-        let mut format_spans = vec![
-            codec_pill,
-            Span::raw(" "),
-            rate_pill,
-            Span::raw(" "),
-            depth_pill,
-            Span::raw(" "),
-            bitrate_pill,
-        ];
-        if let Some(badge) = quality_badge {
-            format_spans.push(Span::raw(" "));
-            format_spans.push(badge);
-        }
-        text.push(Line::from(format_spans));
-    } else {
-        let mut line1_spans = vec![
-            codec_pill,
-            Span::raw(" "),
-            rate_pill,
-            Span::raw(" "),
-            depth_pill,
-        ];
-        if let Some(badge) = quality_badge {
-            line1_spans.push(Span::raw(" "));
-            line1_spans.push(badge);
-        }
-        text.push(Line::from(line1_spans));
-        text.push(Line::from(vec![
-            Span::styled("Bitrate: ", Style::default().fg(Color::DarkGray)),
-            bitrate_pill,
-        ]));
+    // Line 5: Format Component Pills (full width single row or split if narrow)
+    let mut format_spans = vec![
+        codec_pill,
+        Span::raw(" "),
+        rate_pill,
+        Span::raw(" "),
+        depth_pill,
+        Span::raw(" "),
+        bitrate_pill,
+    ];
+    if let Some(badge) = quality_badge {
+        format_spans.push(Span::raw(" "));
+        format_spans.push(badge);
     }
+    meta_lines.push(Line::from(format_spans));
 
-    // Vertically center Text Metadata directly inside the right chunk
-    let num_lines = text.len() as u16;
-    let text_y_offset = (inner_chunks[2].height.saturating_sub(num_lines)) / 2;
-    let text_area = Rect {
-        x: inner_chunks[2].x,
-        y: inner_chunks[2].y + text_y_offset,
-        width: inner_chunks[2].width,
-        height: inner_chunks[2].height.saturating_sub(text_y_offset),
-    };
-    let meta_widget = Paragraph::new(text);
-    f.render_widget(meta_widget, text_area);
+    // Vertical Split: Metadata on top, Cover Art / Centerpiece on bottom
+    let meta_height = (meta_lines.len() as u16).min(inner_area.height);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(meta_height), Constraint::Min(3)])
+        .split(inner_area);
+
+    f.render_widget(Paragraph::new(meta_lines), chunks[0]);
+
+    // Cover Art in lower pane
+    if chunks.len() > 1 && chunks[1].height >= 4 && chunks[1].width >= 8 {
+        let art_height = chunks[1].height.saturating_sub(1).min(14);
+        let art_width = (art_height * 2).min(chunks[1].width);
+        let art_x = chunks[1].x + (chunks[1].width.saturating_sub(art_width)) / 2;
+        let art_y = chunks[1].y + (chunks[1].height.saturating_sub(art_height)) / 2;
+        let art_rect = Rect {
+            x: art_x,
+            y: art_y,
+            width: art_width,
+            height: art_height,
+        };
+        app.cover_art_manager.render(art_rect, f.buffer_mut());
+    }
 }
 
 /// Renders the compact 3-stage Audio Path diagram and hardware diagnostics.
@@ -2608,13 +2572,13 @@ fn render_confirm_delete_liked_modal(f: &mut Frame, track_title: &str, area: Rec
     f.render_widget(Paragraph::new(content).alignment(Alignment::Center), inner);
 }
 
-/// Renders the Help modal popup.
-fn render_help_modal(f: &mut Frame, area: Rect) {
+/// Renders the scrollable Help modal popup.
+fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = Rect {
-        x: area.width / 6,
-        y: area.height / 6,
-        width: area.width * 2 / 3,
-        height: area.height * 2 / 3,
+        x: area.width / 8,
+        y: area.height / 10,
+        width: (area.width * 3 / 4).max(50).min(area.width),
+        height: (area.height * 4 / 5).max(12).min(area.height),
     };
 
     f.render_widget(Clear, popup_area);
@@ -2649,24 +2613,42 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
     2                   Switch to Search tab (radio-browser.info)
     3                   Switch to Audiophile Inspector tab
     4                   Switch to Liked Tracks history tab
-    j / Down            Navigate down
-    k / Up              Navigate up
-    PgDn / PgUp         Scroll by page (5 items)
+    j / Down            Navigate down / Scroll help down
+    k / Up              Navigate up / Scroll help up
+    PgDn / d            Scroll down by page (5 lines)
+    PgUp / u            Scroll up by page (5 lines)
     g / Home            Jump to top
     G / End             Jump to bottom
     ?                   Toggle this Help screen
-    q / Esc             Quit Reso
+    q / Esc             Quit Reso / Close modal
 
 =============================================================================
-                     Press '?' or 'Esc' to close
+             Scroll: [j/k/PgUp/PgDn/g/G]  •  Close: [?/Esc/q]
 "#;
 
-    let help_widget = Paragraph::new(help_text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .title(" Reso Audiophile Help ")
-            .border_style(Style::default().fg(Color::Cyan)),
-    );
+    let total_lines = help_text.lines().count();
+    let inner_height = popup_area.height.saturating_sub(2) as usize;
+    let max_scroll = total_lines.saturating_sub(inner_height);
+    let scroll_pos = app.help_scroll.min(max_scroll);
+
+    let help_widget = Paragraph::new(help_text)
+        .scroll((scroll_pos as u16, 0))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .title(" Reso Audiophile Help ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
     f.render_widget(help_widget, popup_area);
+
+    if total_lines > inner_height {
+        let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll_pos);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        f.render_stateful_widget(scrollbar, popup_area, &mut scrollbar_state);
+    }
 }

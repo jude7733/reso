@@ -4,6 +4,8 @@ use crate::config::Station;
 use crate::error::{ResoError, Result};
 use crate::events::TrackMetadata;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 /// Radio Paradise now playing response JSON schema.
@@ -17,6 +19,21 @@ pub struct RadioParadiseNowPlaying {
     pub cover: Option<String>,
     pub cover_med: Option<String>,
     pub cover_small: Option<String>,
+}
+
+/// iTunes search API response schema.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ITunesSearchResponse {
+    pub results: Vec<ITunesSearchResult>,
+}
+
+/// iTunes individual track search item schema.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ITunesSearchResult {
+    #[serde(rename = "artworkUrl100")]
+    pub artwork_url_100: Option<String>,
+    #[serde(rename = "artworkUrl600")]
+    pub artwork_url_600: Option<String>,
 }
 
 /// Radio-Browser station search response JSON schema.
@@ -38,6 +55,7 @@ pub struct RadioBrowserStation {
 #[derive(Clone)]
 pub struct ApiClient {
     client: reqwest::Client,
+    cover_cache: Arc<RwLock<HashMap<String, Option<String>>>>,
 }
 
 impl Default for ApiClient {
@@ -55,7 +73,10 @@ impl ApiClient {
             .build()
             .unwrap_or_default();
 
-        Self { client }
+        Self {
+            client,
+            cover_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Fetches rich metadata from Radio Paradise for a specific channel (0: Main, 1: Mellow, 2: Rock, 3: World).
@@ -184,5 +205,60 @@ impl ApiClient {
         let resp = self.client.get(url).send().await?;
         let bytes = resp.bytes().await?;
         Ok(bytes.to_vec())
+    }
+
+    /// Searches iTunes for album artwork given artist and track title.
+    pub async fn search_itunes_cover_art(
+        &self,
+        artist: &str,
+        title: &str,
+    ) -> Result<Option<String>> {
+        let clean_artist = artist.trim();
+        let clean_title = title.trim();
+        if clean_artist.is_empty() && clean_title.is_empty() {
+            return Ok(None);
+        }
+
+        let cache_key = format!("{} - {}", clean_artist, clean_title).to_lowercase();
+        if let Ok(cache) = self.cover_cache.read() {
+            if let Some(cached_url) = cache.get(&cache_key) {
+                return Ok(cached_url.clone());
+            }
+        }
+
+        let query = format!("{} {}", clean_artist, clean_title);
+        let resp = self
+            .client
+            .get("https://itunes.apple.com/search")
+            .query(&[
+                ("term", &query),
+                ("media", &"music".to_string()),
+                ("entity", &"song".to_string()),
+                ("limit", &"1".to_string()),
+            ])
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+
+        let search_res: ITunesSearchResponse = match resp.json().await {
+            Ok(res) => res,
+            Err(_) => return Ok(None),
+        };
+
+        let cover_url = search_res.results.into_iter().next().and_then(|r| {
+            r.artwork_url_600.or_else(|| {
+                r.artwork_url_100
+                    .map(|u| u.replace("100x100bb", "600x600bb"))
+            })
+        });
+
+        if let Ok(mut cache) = self.cover_cache.write() {
+            cache.insert(cache_key, cover_url.clone());
+        }
+
+        Ok(cover_url)
     }
 }

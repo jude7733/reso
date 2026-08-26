@@ -221,6 +221,7 @@ pub struct App {
     pub liked_list_index: usize,
     pub liked_list_state: ListState,
     pub modal_state: ModalState,
+    pub help_scroll: usize,
     pub visualizer_state: VisualizerState,
     pub cover_art_manager: CoverArtManager,
     pub tick_count: u64,
@@ -279,6 +280,7 @@ impl App {
             liked_list_index: 0,
             liked_list_state: ListState::default(),
             modal_state: ModalState::None,
+            help_scroll: 0,
             visualizer_state: VisualizerState::default(),
             cover_art_manager: CoverArtManager::new(),
             tick_count: 0,
@@ -487,6 +489,7 @@ impl App {
                 self.should_quit = true;
             }
             KeyCode::Char('?') => {
+                self.help_scroll = 0;
                 self.modal_state = ModalState::Help;
             }
             KeyCode::Char('1') => self.active_tab = ActiveTab::Stations,
@@ -784,14 +787,30 @@ impl App {
     /// Handles key events when a modal dialog is displayed.
     async fn handle_modal_key_event(&mut self, key: KeyEvent) -> Result<()> {
         match &mut self.modal_state {
-            ModalState::Help => {
-                if key.code == KeyCode::Esc
-                    || key.code == KeyCode::Char('?')
-                    || key.code == KeyCode::Char('q')
-                {
+            ModalState::Help => match key.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
                     self.modal_state = ModalState::None;
                 }
-            }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.help_scroll = self.help_scroll.saturating_add(1).min(60);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                }
+                KeyCode::Char('d') | KeyCode::PageDown => {
+                    self.help_scroll = self.help_scroll.saturating_add(5).min(60);
+                }
+                KeyCode::Char('u') | KeyCode::PageUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(5);
+                }
+                KeyCode::Char('g') | KeyCode::Home => {
+                    self.help_scroll = 0;
+                }
+                KeyCode::Char('G') | KeyCode::End => {
+                    self.help_scroll = 60;
+                }
+                _ => {}
+            },
 
             ModalState::ConfirmDeleteStation { station_id, .. } => match key.code {
                 KeyCode::Char('y') | KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('x') => {
@@ -1207,12 +1226,52 @@ impl App {
                 if s != PlaybackState::Playing {
                     self.visualizer_state.stop_capture();
                 }
+                if s == PlaybackState::Stopped {
+                    self.cover_art_manager.set_active_key(None);
+                }
                 self.update_mpris();
             }
             MpvEvent::Metadata(m) => {
                 self.track_metadata = m.clone();
-                self.scrobbler.on_track_change(m).await;
+                self.scrobbler.on_track_change(m.clone()).await;
                 self.update_mpris();
+
+                // Universal Cover Art: For non-Radio Paradise channels or fallback
+                let is_rp = self
+                    .current_station
+                    .as_ref()
+                    .and_then(|s| s.rp_channel)
+                    .is_some();
+                if !is_rp {
+                    let artist_opt = m.artist.as_ref().cloned().or_else(|| {
+                        m.raw_title
+                            .as_ref()
+                            .and_then(|r| crate::mpv::client::parse_artist_title(r).0)
+                    });
+                    let title_opt = m.title.as_ref().cloned().or_else(|| {
+                        m.raw_title
+                            .as_ref()
+                            .and_then(|r| crate::mpv::client::parse_artist_title(r).1)
+                    });
+
+                    if let (Some(artist), Some(title)) = (artist_opt, title_opt) {
+                        if !artist.trim().is_empty() && !title.trim().is_empty() {
+                            if let Ok(Some(cover_url)) = self
+                                .api_client
+                                .search_itunes_cover_art(&artist, &title)
+                                .await
+                            {
+                                if let Ok(bytes) =
+                                    self.api_client.download_image_bytes(&cover_url).await
+                                {
+                                    self.cover_art_manager.load_image(&cover_url, &bytes);
+                                    self.track_metadata.cover_url = Some(cover_url);
+                                    self.update_mpris();
+                                }
+                            }
+                        }
+                    }
+                }
             }
             MpvEvent::AudioParams(p) => {
                 self.stream_params = p;
