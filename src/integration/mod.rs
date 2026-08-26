@@ -3,9 +3,11 @@
 pub mod api;
 pub mod clipboard;
 pub mod mpris;
+pub mod prober;
 pub mod scrobbler;
 
 pub use api::ApiClient;
 pub use clipboard::copy_to_clipboard;
 pub use mpris::{start_mpris_server, MprisState};
+pub use prober::{StreamProbeResult, StreamProber};
 pub use scrobbler::ScrobbleTracker;
