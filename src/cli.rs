@@ -19,6 +19,15 @@ pub enum Commands {
     /// List all configured radio stations.
     List(ListArgs),
 
+    /// Add a new radio endpoint URL (tests stream & verifies audio format before adding).
+    Add(AddArgs),
+
+    /// Edit an existing radio station's name, URL, codec, sample rate, bit depth, or tags.
+    Edit(EditArgs),
+
+    /// Delete a radio station from the catalog.
+    Delete(DeleteArgs),
+
     /// Play a station by ID, name, or URL.
     Play(PlayArgs),
 
@@ -52,8 +61,11 @@ pub enum Commands {
     /// Manage lossless stream recording (~/Music/Radio/).
     Record(RecordArgs),
 
-    /// Bookmark the currently playing track to ~/.config/reso/liked_tracks.md.
+    /// Bookmark the currently playing track to ~/.config/reso/liked_tracks.toml.
     Like,
+
+    /// Manage or view liked tracks history (~/.config/reso/liked_tracks.toml).
+    Liked(LikedArgs),
 
     /// Copy current track `Artist - Title` to clipboard (Wayland / X11).
     Copy,
@@ -74,6 +86,60 @@ pub struct ListArgs {
     /// Output list as JSON.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AddArgs {
+    /// Radio stream endpoint URL (http:// or https://).
+    pub url: String,
+
+    /// Human-readable station name (auto-detected if omitted).
+    #[arg(short, long)]
+    pub name: Option<String>,
+
+    /// Genre tags (e.g. `jazz, lossless, classical`).
+    #[arg(short, long)]
+    pub tags: Option<String>,
+
+    /// Skip stream probing and format verification.
+    #[arg(long)]
+    pub no_test: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct EditArgs {
+    /// Station ID (e.g. `rp-main`) or station name to edit.
+    pub station: String,
+
+    /// Updated station name.
+    #[arg(short, long)]
+    pub name: Option<String>,
+
+    /// Updated stream endpoint URL.
+    #[arg(short, long)]
+    pub url: Option<String>,
+
+    /// Updated codec (e.g. `FLAC`, `AAC`, `OPUS`).
+    #[arg(short, long)]
+    pub codec: Option<String>,
+
+    /// Updated sample rate in Hz (e.g. `44100`, `48000`, `96000`).
+    #[arg(short, long)]
+    pub sample_rate: Option<u32>,
+
+    /// Updated bit depth in bits (e.g. `16`, `24`).
+    #[arg(short, long)]
+    pub bit_depth: Option<u8>,
+
+    /// Updated genre tags (e.g. `jazz, lossless`).
+    #[arg(short, long)]
+    pub tags: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct DeleteArgs {
+    /// Station ID (e.g. `rp-main`) or station name to remove.
+    pub station: String,
 }
 
 #[derive(Args, Debug)]
@@ -135,6 +201,21 @@ pub struct RecordArgs {
     /// Custom output file path.
     #[arg(short, long)]
     pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct LikedArgs {
+    /// Action: `list` (default) or `delete`.
+    #[arg(default_value = "list")]
+    pub action: String,
+
+    /// Track ID to delete when action is `delete`.
+    #[arg(short, long)]
+    pub id: Option<String>,
+
+    /// Output list as JSON.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug)]

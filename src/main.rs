@@ -41,6 +41,18 @@ async fn main() -> anyhow::Result<()> {
             handle_list_command(&config_manager, args.favorites, args.json)?;
         }
 
+        Some(Commands::Add(args)) => {
+            handle_add_command(config_manager, args).await?;
+        }
+
+        Some(Commands::Edit(args)) => {
+            handle_edit_command(config_manager, args)?;
+        }
+
+        Some(Commands::Delete(args)) => {
+            handle_delete_command(config_manager, args.station)?;
+        }
+
         Some(Commands::Play(args)) => {
             handle_play_command(config_manager, args.station, args.sleep, args.foreground).await?;
         }
@@ -102,7 +114,12 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Like) => {
-            handle_like_command(&config_manager).await?;
+            let mut cm = config_manager;
+            handle_like_command(&mut cm).await?;
+        }
+
+        Some(Commands::Liked(args)) => {
+            handle_liked_command(config_manager, args.action, args.id, args.json)?;
         }
 
         Some(Commands::Copy) => {
@@ -443,17 +460,297 @@ async fn handle_record_command(
     Ok(())
 }
 
+/// Handles `reso add <url>`.
+async fn handle_add_command(mut config_manager: ConfigManager, args: cli::AddArgs) -> Result<()> {
+    let clean_url = args.url.trim().to_string();
+    if clean_url.is_empty() {
+        return Err(ResoError::Config("Stream URL cannot be empty".to_string()));
+    }
+
+    let (codec, sample_rate, bit_depth, auto_name, auto_tags, is_lossless) = if !args.no_test {
+        println!("⏳ Testing radio stream endpoint: {}", clean_url);
+        match integration::prober::StreamProber::probe_endpoint(&clean_url).await {
+            Ok(probe) => {
+                println!("✓ Stream verified successfully!");
+                println!(
+                    "  • Codec:       {} ({})",
+                    probe.codec,
+                    if probe.is_lossless {
+                        "Lossless"
+                    } else {
+                        "Lossy"
+                    }
+                );
+                println!("  • Sample Rate: {}", format_sample_rate(probe.sample_rate));
+                println!("  • Bit Depth:   {}-bit", probe.bit_depth);
+                if let Some(br) = probe.bitrate_kbps {
+                    println!("  • Bitrate:     {} kbps", br);
+                }
+                (
+                    probe.codec,
+                    probe.sample_rate,
+                    probe.bit_depth,
+                    probe.suggested_name,
+                    probe.tags,
+                    probe.is_lossless,
+                )
+            }
+            Err(e) => {
+                eprintln!("✗ Stream probe failed: {}", e);
+                return Err(ResoError::Config(format!(
+                    "Failed to connect to stream: {}",
+                    e
+                )));
+            }
+        }
+    } else {
+        (
+            "FLAC".to_string(),
+            44100,
+            16,
+            integration::prober::infer_name_from_url(&clean_url),
+            vec!["custom".to_string()],
+            true,
+        )
+    };
+
+    let name = args.name.unwrap_or(auto_name);
+    let mut tags: Vec<String> = if let Some(t_str) = args.tags {
+        t_str
+            .split([';', ',', '/'])
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect()
+    } else {
+        auto_tags
+    };
+
+    if is_lossless && !tags.contains(&"lossless".to_string()) {
+        tags.push("lossless".to_string());
+    }
+
+    let slug_id = util::sanitize_filename(&name)
+        .to_lowercase()
+        .replace(' ', "-");
+
+    let station = config::Station {
+        id: slug_id,
+        name: name.clone(),
+        url: clean_url,
+        codec,
+        sample_rate,
+        bit_depth,
+        homepage: None,
+        tags,
+        favorite: false,
+        rp_channel: None,
+    };
+
+    config_manager.add_station(station)?;
+    println!(
+        "✓ Station '{}' added to catalog (~/.config/reso/stations.toml).",
+        name
+    );
+    Ok(())
+}
+
+/// Handles `reso edit <station> [flags]`.
+fn handle_edit_command(mut config_manager: ConfigManager, args: cli::EditArgs) -> Result<()> {
+    let target = config_manager.find_station(&args.station).cloned();
+    let existing = match target {
+        Some(st) => st,
+        None => {
+            return Err(ResoError::Config(format!(
+                "Station '{}' not found in catalog",
+                args.station
+            )))
+        }
+    };
+
+    let name = args.name.unwrap_or(existing.name);
+    let url = args.url.unwrap_or(existing.url);
+    let codec = args.codec.unwrap_or(existing.codec);
+    let sample_rate = args.sample_rate.unwrap_or(existing.sample_rate);
+    let bit_depth = args.bit_depth.unwrap_or(existing.bit_depth);
+    let tags = if let Some(t_str) = args.tags {
+        t_str
+            .split([';', ',', '/'])
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect()
+    } else {
+        existing.tags
+    };
+
+    let updated = config::Station {
+        id: existing.id.clone(),
+        name: name.clone(),
+        url,
+        codec,
+        sample_rate: if sample_rate == 0 { 44100 } else { sample_rate },
+        bit_depth: if bit_depth == 0 { 16 } else { bit_depth },
+        homepage: existing.homepage,
+        tags,
+        favorite: existing.favorite,
+        rp_channel: existing.rp_channel,
+    };
+
+    config_manager.edit_station(&existing.id, updated)?;
+    println!(
+        "✓ Updated station '{}' [{}] in stations.toml.",
+        name, existing.id
+    );
+    Ok(())
+}
+
+/// Handles `reso delete <station>`.
+fn handle_delete_command(mut config_manager: ConfigManager, station_query: String) -> Result<()> {
+    let target_station = config_manager.find_station(&station_query).cloned();
+    match target_station {
+        Some(st) => {
+            config_manager.remove_station(&st.id)?;
+            println!("✓ Removed station '{}' [{}] from catalog.", st.name, st.id);
+            Ok(())
+        }
+        None => Err(ResoError::Config(format!(
+            "Station '{}' not found in catalog",
+            station_query
+        ))),
+    }
+}
+
 /// Handles `reso like`.
-async fn handle_like_command(config_manager: &ConfigManager) -> Result<()> {
-    let path = config_manager.bookmark_track(
-        "Current Stream",
-        "Bookmarked Track",
-        "Lossless Radio Stream",
-        None,
-        Some("FLAC"),
-        Some(44100),
+async fn handle_like_command(config_manager: &mut ConfigManager) -> Result<()> {
+    let (artist, title, album, station, codec, sample_rate, bit_depth) =
+        if let Ok((_client, mut rx)) = get_mpv_client(config_manager).await {
+            let mut meta = events::TrackMetadata::default();
+            let mut params = events::AudioStreamParams::default();
+            let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(60));
+            tokio::pin!(timeout);
+            loop {
+                tokio::select! {
+                    _ = &mut timeout => break,
+                    Ok(ev) = rx.recv() => {
+                        match ev {
+                            events::MpvEvent::Metadata(m) => meta = m,
+                            events::MpvEvent::AudioParams(p) => params = p,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let art = meta.artist.unwrap_or_else(|| "Unknown Artist".to_string());
+            let tit = meta
+                .title
+                .or(meta.raw_title)
+                .unwrap_or_else(|| "Lossless Stream".to_string());
+            let alb = meta.album;
+            let cdc = if params.codec.is_empty() {
+                None
+            } else {
+                Some(params.codec)
+            };
+            let sr = if params.sample_rate > 0 {
+                Some(params.sample_rate)
+            } else {
+                None
+            };
+            let bd = params.bit_depth;
+            (art, tit, alb, "Reso Stream".to_string(), cdc, sr, bd)
+        } else {
+            (
+                "Unknown Artist".to_string(),
+                "Bookmarked Track".to_string(),
+                None,
+                "Reso".to_string(),
+                Some("FLAC".to_string()),
+                Some(44100),
+                Some(16),
+            )
+        };
+
+    let track = config_manager.bookmark_track(
+        &station,
+        &artist,
+        &title,
+        album.as_deref(),
+        codec.as_deref(),
+        sample_rate,
+        bit_depth,
     )?;
-    println!("✓ Track bookmarked to {}", path.display());
+
+    println!("✓ Liked track saved to ~/.config/reso/liked_tracks.toml:");
+    println!("  • {}", track.display_summary());
+    Ok(())
+}
+
+/// Handles `reso liked`.
+fn handle_liked_command(
+    mut config_manager: ConfigManager,
+    action: String,
+    id: Option<String>,
+    as_json: bool,
+) -> Result<()> {
+    match action.as_str() {
+        "delete" | "remove" | "rm" => {
+            if let Some(track_id) = id {
+                let removed = config_manager.remove_liked_track(&track_id)?;
+                if removed {
+                    println!(
+                        "✓ Removed track '{}' from ~/.config/reso/liked_tracks.toml.",
+                        track_id
+                    );
+                } else {
+                    println!("✗ Track with ID '{}' not found.", track_id);
+                }
+            } else {
+                return Err(ResoError::Config(
+                    "Please specify --id <track_id> to delete".to_string(),
+                ));
+            }
+        }
+        _ => {
+            let tracks = &config_manager.liked_catalog.tracks;
+            if as_json {
+                let json = serde_json::to_string_pretty(tracks)?;
+                println!("{}", json);
+                return Ok(());
+            }
+
+            println!(
+                "================================================================================"
+            );
+            println!(
+                "                           RESO LIKED TRACKS HISTORY                            "
+            );
+            println!(
+                "================================================================================"
+            );
+            println!(
+                "{:<20} {:<24} {:<24} {:<10}",
+                "TIMESTAMP", "ARTIST", "TITLE", "STATION"
+            );
+            println!(
+                "--------------------------------------------------------------------------------"
+            );
+            for t in tracks {
+                println!(
+                    "{:<20} {:<24} {:<24} {:<10}",
+                    t.timestamp,
+                    util::truncate_str(&t.artist, 22),
+                    util::truncate_str(&t.title, 22),
+                    util::truncate_str(&t.station, 10),
+                );
+            }
+            println!(
+                "================================================================================"
+            );
+            println!(
+                "Total: {} tracks bookmarked (~/.config/reso/liked_tracks.toml)",
+                tracks.len()
+            );
+        }
+    }
     Ok(())
 }
 
