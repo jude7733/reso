@@ -1,6 +1,7 @@
 //! Central event definitions and asynchronous messaging channels for `reso`.
 
 use crate::config::Station;
+use crate::integration::StreamProbeResult;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -84,5 +85,10 @@ pub enum AppAction {
     BookmarkTrack,
     CopyTrackToClipboard,
     Search(String),
+    ProbeStream(String),
+    ProbeComplete(std::result::Result<StreamProbeResult, String>),
+    PlayPreview(String),
+    RestorePreviousPlayback,
+    UpdateStation(Station),
     Quit,
 }

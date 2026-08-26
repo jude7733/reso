@@ -177,8 +177,9 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         let album = app.track_metadata.album.as_deref();
                         let codec = if app.stream_params.codec.is_empty() { None } else { Some(app.stream_params.codec.as_str()) };
                         let rate = if app.stream_params.sample_rate == 0 { None } else { Some(app.stream_params.sample_rate) };
+                        let bit_depth = app.stream_params.bit_depth;
 
-                        let _ = app.config_manager.bookmark_track(st_name, artist, title, album, codec, rate);
+                        let _ = app.config_manager.bookmark_track(st_name, artist, title, album, codec, rate, bit_depth);
                         app.load_liked_history();
                     }
                     AppAction::CopyTrackToClipboard => {
@@ -190,6 +191,31 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             app.search_results = res;
                             app.search_results_index = 0;
                         }
+                    }
+                    AppAction::ProbeStream(url) => {
+                        let _ = mpv_client.load_file(&url).await;
+                        let tx = app.action_tx.clone();
+                        tokio::spawn(async move {
+                            let res = crate::integration::prober::StreamProber::probe_endpoint(&url).await;
+                            let _ = tx.send(AppAction::ProbeComplete(res)).await;
+                        });
+                    }
+                    AppAction::ProbeComplete(res) => {
+                        app.handle_probe_result(res);
+                    }
+                    AppAction::PlayPreview(url) => {
+                        let _ = mpv_client.load_file(&url).await;
+                    }
+                    AppAction::RestorePreviousPlayback => {
+                        if let Some(ref st) = app.current_station {
+                            let _ = mpv_client.load_file(&st.url).await;
+                        } else {
+                            let _ = mpv_client.stop().await;
+                        }
+                    }
+                    AppAction::UpdateStation(st) => {
+                        let _ = app.config_manager.add_station(st);
+                        app.catalog = app.config_manager.catalog.clone();
                     }
                     AppAction::Quit => {
                         app.should_quit = true;

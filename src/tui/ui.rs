@@ -2,7 +2,9 @@
 
 use crate::events::PlaybackState;
 use crate::inspector::status::BitPerfectVerdict;
-use crate::tui::app::{ActiveTab, App};
+use crate::tui::app::{
+    ActiveTab, AddStationState, AddStationStep, App, EditStationState, ModalState,
+};
 use crate::tui::visualizer::VisualizerWidget;
 use crate::util::{format_duration, format_sample_rate};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -42,9 +44,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
     render_footer(f, app, main_chunks[3]);
 
-    // Render Search / Help Modals if active
-    if app.show_help_modal {
-        render_help_modal(f, area);
+    // Render Modals if active
+    match &app.modal_state {
+        ModalState::Help => render_help_modal(f, area),
+        ModalState::AddStation(state) => render_add_station_modal(f, state, app.tick_count, area),
+        ModalState::EditStation(state) => render_edit_station_modal(f, state, area),
+        ModalState::ConfirmDeleteStation { station_name, .. } => {
+            render_confirm_delete_station_modal(f, station_name, area);
+        }
+        ModalState::ConfirmDeleteLiked { track_title, .. } => {
+            render_confirm_delete_liked_modal(f, track_title, area);
+        }
+        ModalState::None => {}
     }
 }
 
@@ -225,7 +236,7 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-/// Renders the station catalog list on the left.
+/// Renders the station catalog list on the left with selected station details & tags.
 fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.active_tab == ActiveTab::Stations && !app.search_input_active;
     let filtered: Vec<crate::config::Station> =
@@ -240,6 +251,14 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         app.station_list_state.select(Some(app.station_list_index));
     }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(8),    // Stations List
+            Constraint::Length(4), // Selected Station Tags & Info Card
+        ])
+        .split(area);
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -261,7 +280,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
             let fav_icon = if station.favorite { "★ " } else { "  " };
 
             let rate_badge = format!(
-                "[{} {}]",
+                " [{} {}]",
                 station.codec,
                 format_sample_rate(station.sample_rate)
             );
@@ -279,6 +298,17 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::Gray)
             };
 
+            // Calculate name width to never collide with rate badge
+            let badge_width = rate_badge.chars().count();
+            let prefix_width = 4; // play_icon + fav_icon
+            let max_name_width = (chunks[0]
+                .width
+                .saturating_sub(badge_width as u16 + prefix_width + 4)
+                as usize)
+                .clamp(12, 45);
+            let truncated_name = crate::util::truncate_str(&station.name, max_name_width);
+            let padded_name = format!("{:<width$}", truncated_name, width = max_name_width);
+
             let content = Line::from(vec![
                 Span::styled(
                     play_icon,
@@ -289,8 +319,15 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                     },
                 ),
                 Span::styled(fav_icon, Style::default().fg(Color::Yellow)),
-                Span::styled(format!("{:<28}", station.name), base_style),
-                Span::styled(rate_badge, Style::default().fg(Color::DarkGray)),
+                Span::styled(padded_name, base_style),
+                Span::styled(
+                    rate_badge,
+                    if is_selected {
+                        Style::default().fg(Color::Rgb(140, 200, 255))
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    },
+                ),
             ]);
 
             ListItem::new(content)
@@ -302,7 +339,11 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         Color::DarkGray
     };
-    let title = format!(" Stations ({}) ", total_len);
+    let title = format!(
+        " Stations ({}) [Sort: {}] ",
+        total_len,
+        app.station_sort_mode.display_label()
+    );
 
     let list_widget = List::new(items)
         .block(
@@ -319,9 +360,9 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(list_widget, area, &mut app.station_list_state);
+    f.render_stateful_widget(list_widget, chunks[0], &mut app.station_list_state);
 
-    let visible_height = area.height.saturating_sub(2) as usize;
+    let visible_height = chunks[0].height.saturating_sub(2) as usize;
     if total_len > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_len).position(app.station_list_index);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -329,8 +370,61 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
             .end_symbol(Some("▼"))
             .track_symbol(Some("│"))
             .thumb_symbol("█");
-        f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        f.render_stateful_widget(scrollbar, chunks[0], &mut scrollbar_state);
     }
+
+    // Render Selected Station Tags & Info Card
+    let selected_station = filtered.get(app.station_list_index);
+    let card_lines = if let Some(st) = selected_station {
+        let mut tag_spans = vec![Span::styled(
+            "🏷 Tags: ",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )];
+        if st.tags.is_empty() {
+            tag_spans.push(Span::styled("none", Style::default().fg(Color::DarkGray)));
+        } else {
+            for (ti, tag) in st.tags.iter().enumerate() {
+                if ti > 0 {
+                    tag_spans.push(Span::raw(" "));
+                }
+                tag_spans.push(Span::styled(
+                    format!("[{}]", tag),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
+        }
+
+        let max_url_len = chunks[1].width.saturating_sub(8) as usize;
+        let url_truncated = crate::util::truncate_str(&st.url, max_url_len);
+        let url_line = vec![
+            Span::styled("🔗 URL:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                url_truncated,
+                Style::default().fg(Color::Rgb(160, 180, 200)),
+            ),
+        ];
+
+        vec![Line::from(tag_spans), Line::from(url_line)]
+    } else {
+        vec![
+            Line::styled(" No station selected", Style::default().fg(Color::DarkGray)),
+            Line::styled(
+                " Press [a] to add a radio endpoint",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]
+    };
+
+    let tags_card = Paragraph::new(card_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Station Tags & Stream Endpoint ")
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
+    f.render_widget(tags_card, chunks[1]);
 }
 
 /// Renders the right pane: Unified Now Playing (music player showcase) + Audiophile Diagnostics.
@@ -630,7 +724,13 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         }
         text.push(Line::from(format_spans));
     } else {
-        let mut line1_spans = vec![codec_pill, Span::raw(" "), rate_pill, Span::raw(" "), depth_pill];
+        let mut line1_spans = vec![
+            codec_pill,
+            Span::raw(" "),
+            rate_pill,
+            Span::raw(" "),
+            depth_pill,
+        ];
         if let Some(badge) = quality_badge {
             line1_spans.push(Span::raw(" "));
             line1_spans.push(badge);
@@ -797,10 +897,14 @@ fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
     let keys = vec![
         ("Space", "Pause"),
         ("Enter", "Play"),
+        ("a", "Add"),
+        ("e/c", "Edit"),
+        ("d/x", "Del"),
+        ("S", "Sort"),
+        ("y", "Copy"),
         ("f", "Fav"),
         ("r", "Rec"),
         ("l", "Like"),
-        ("c", "Copy"),
         ("+/-", "Vol"),
         ("/", "Filter"),
         ("1-4", "Tabs"),
@@ -1679,7 +1783,7 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
 
 /// Renders the Liked Tracks history tab.
 fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
-    let total_len = app.liked_tracks_history.len();
+    let total_len = app.liked_tracks.len();
     if total_len > 0 && app.liked_list_index >= total_len {
         app.liked_list_index = total_len - 1;
     }
@@ -1690,12 +1794,12 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let items: Vec<ListItem> = app
-        .liked_tracks_history
+        .liked_tracks
         .iter()
         .enumerate()
-        .map(|(idx, line)| {
+        .map(|(idx, track)| {
             let is_sel = idx == app.liked_list_index;
-            let style = if is_sel {
+            let text_style = if is_sel {
                 Style::default()
                     .fg(Color::White)
                     .bg(Color::Rgb(30, 45, 60))
@@ -1703,7 +1807,29 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::Gray)
             };
-            ListItem::new(Span::styled(line, style))
+
+            let rate_str = track
+                .sample_rate
+                .map(|r| format!(" {}", format_sample_rate(r)))
+                .unwrap_or_default();
+            let codec_badge = format!("[{}{}]", track.codec.as_deref().unwrap_or("FLAC"), rate_str);
+
+            let line = Line::from(vec![
+                Span::styled(
+                    format!("[{}] ", track.timestamp),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(format!("{} - {}", track.artist, track.title), text_style),
+                Span::styled(
+                    format!(" [{}]", track.station),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    format!(" {}", codec_badge),
+                    Style::default().fg(Color::Rgb(120, 180, 240)),
+                ),
+            ]);
+            ListItem::new(line)
         })
         .collect();
 
@@ -1713,7 +1839,7 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(format!(
-                    " Liked Tracks History ({}) (~/.config/reso/liked_tracks.md) ",
+                    " Liked Tracks ({}) [d/x: Delete | y/c: Copy | Enter: Play Station] (~/.config/reso/liked_tracks.toml) ",
                     total_len
                 ))
                 .border_style(Style::default().fg(Color::DarkGray)),
@@ -1739,6 +1865,749 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
+/// Renders the Add Station modal wizard (Input URL -> Probing -> Verified / Confirm -> Save).
+fn render_add_station_modal(f: &mut Frame, state: &AddStationState, tick_count: u64, area: Rect) {
+    let popup_width = (area.width * 80 / 100).clamp(58, 88);
+    let popup_height = 15;
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    match state.step {
+        AddStationStep::Input => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .title(" Add New Radio Endpoint URL ")
+                .border_style(Style::default().fg(Color::Cyan));
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // URL Input
+                    Constraint::Length(3), // Name Input
+                    Constraint::Length(3), // Tags Input
+                    Constraint::Min(3),    // Helper / Duplicate warning
+                ])
+                .split(inner);
+
+            // Field 0: URL
+            let url_cursor = if state.active_field == 0 { "█" } else { "" };
+            let url_style = if state.active_field == 0 {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let url_text = format!("{}{}", state.url_input, url_cursor);
+            let url_widget = Paragraph::new(url_text).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" 1. Stream Endpoint URL (http:// or https://) * ")
+                    .border_style(url_style),
+            );
+            f.render_widget(url_widget, chunks[0]);
+
+            // Field 1: Name
+            let name_cursor = if state.active_field == 1 { "█" } else { "" };
+            let name_style = if state.active_field == 1 {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let name_text = format!("{}{}", state.name_input, name_cursor);
+            let name_widget = Paragraph::new(name_text).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" 2. Station Name (Optional - auto-detected if blank) ")
+                    .border_style(name_style),
+            );
+            f.render_widget(name_widget, chunks[1]);
+
+            // Field 2: Tags
+            let tags_cursor = if state.active_field == 2 { "█" } else { "" };
+            let tags_style = if state.active_field == 2 {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let tags_text = format!("{}{}", state.tags_input, tags_cursor);
+            let tags_widget = Paragraph::new(tags_text).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" 3. Genre Tags (Optional, e.g. jazz, hi-res, lossless) ")
+                    .border_style(tags_style),
+            );
+            f.render_widget(tags_widget, chunks[2]);
+
+            // Helper / Duplicate warning
+            let mut helper_lines = Vec::new();
+            if let Some(ref existing_name) = state.duplicate_warning {
+                helper_lines.push(Line::from(vec![
+                    Span::styled(
+                        " ⚠ Note: ",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("Station already exists in catalog: \"{}\"", existing_name),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]));
+            } else {
+                helper_lines.push(Line::raw(""));
+            }
+
+            helper_lines.push(Line::from(vec![
+                Span::styled(
+                    "[Enter] ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Test Stream & Live Audio Preview     ",
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled(
+                    "[Tab / ↑↓] ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("Cycle Fields", Style::default().fg(Color::DarkGray)),
+            ]));
+            helper_lines.push(Line::from(vec![
+                Span::styled(
+                    "[Ctrl+U] ",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Clear Field                         ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    "[Esc] ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("Cancel", Style::default().fg(Color::DarkGray)),
+            ]));
+
+            f.render_widget(
+                Paragraph::new(helper_lines).alignment(Alignment::Center),
+                chunks[3],
+            );
+        }
+
+        AddStationStep::Probing => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .title(" Probing Radio Stream & Starting Live Audio Preview... ")
+                .border_style(Style::default().fg(Color::Yellow));
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let spinner = spinner_frames[(tick_count as usize / 2) % spinner_frames.len()];
+
+            let content = vec![
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", spinner),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Connecting to endpoint & inspecting stream audio format...",
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled("  Target URL: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&state.url_input, Style::default().fg(Color::Cyan)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![Span::styled(
+                    "  🔊 Live audio preview playing via MPV client while probing ICY headers...",
+                    Style::default().fg(Color::Rgb(140, 200, 255)),
+                )]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled(
+                        "  [Esc] ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Cancel Probing & Restore Previous Playback",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]),
+            ];
+            f.render_widget(Paragraph::new(content), inner);
+        }
+
+        AddStationStep::Confirm => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .title(" ✓ Stream Verified - Confirm Addition ")
+                .border_style(Style::default().fg(Color::Green));
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let probe = state.probe_result.as_ref();
+            let codec_str = probe.map(|p| p.codec.as_str()).unwrap_or("FLAC");
+            let sr_str = probe
+                .map(|p| format_sample_rate(p.sample_rate))
+                .unwrap_or_else(|| "44.1 kHz".to_string());
+            let bit_depth_str = probe
+                .map(|p| format!("{}-bit", p.bit_depth))
+                .unwrap_or_else(|| "16-bit".to_string());
+            let is_lossless = probe.map(|p| p.is_lossless).unwrap_or(true);
+
+            let codec_badge = if is_lossless {
+                Span::styled(
+                    format!(" [{} LOSSLESS] ", codec_str),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(
+                    format!(" [{}] ", codec_str),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
+            };
+
+            let rate_badge = Span::styled(
+                format!(" [{} | {}] ", sr_str, bit_depth_str),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let name_cursor = if state.active_field == 1 { "█" } else { "" };
+            let tags_cursor = if state.active_field == 2 { "█" } else { "" };
+
+            let content = vec![
+                Line::from(vec![
+                    Span::styled("Format:  ", Style::default().fg(Color::DarkGray)),
+                    codec_badge,
+                    Span::raw(" "),
+                    rate_badge,
+                ]),
+                Line::from(vec![
+                    Span::styled("URL:     ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&state.url_input, Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Name:    ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("{}{}", state.name_input, name_cursor),
+                        if state.active_field == 1 {
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::White)
+                        },
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Tags:    ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("{}{}", state.tags_input, tags_cursor),
+                        if state.active_field == 2 {
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::White)
+                        },
+                    ),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled(
+                        "[Enter / y] ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Confirm & Save to stations.toml     ",
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        "[t] ",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("Re-test Stream", Style::default().fg(Color::Gray)),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        "[Tab / ↑↓] ",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Edit Station Name / Genre Tags     ",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        "[Esc] ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("Cancel & Discard", Style::default().fg(Color::DarkGray)),
+                ]),
+            ];
+
+            f.render_widget(Paragraph::new(content), inner);
+        }
+
+        AddStationStep::Error => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .title(" ✗ Stream Test Failed ")
+                .border_style(Style::default().fg(Color::Red));
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+
+            let err_msg = state
+                .probe_error
+                .as_deref()
+                .unwrap_or("Unable to connect to audio stream");
+
+            let content = vec![
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled(
+                        "Error:  ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(err_msg, Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Target: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&state.url_input, Style::default().fg(Color::Cyan)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled(
+                        "[t / Enter] ",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Retry Probe Connection     ",
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::styled(
+                        "[e / Tab] ",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("Edit URL", Style::default().fg(Color::White)),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        "[f] ",
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Force Add Anyway                 ",
+                        Style::default().fg(Color::Gray),
+                    ),
+                    Span::styled(
+                        "[Esc] ",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("Cancel & Discard", Style::default().fg(Color::Gray)),
+                ]),
+            ];
+
+            f.render_widget(Paragraph::new(content), inner);
+        }
+    }
+}
+
+/// Renders the Edit Station modal dialog.
+fn render_edit_station_modal(f: &mut Frame, state: &EditStationState, area: Rect) {
+    let popup_width = (area.width * 80 / 100).clamp(58, 88);
+    let popup_height = 17;
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .title(format!(" Edit Station: {} ", state.original_id))
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // Field 0: Name
+            Constraint::Length(2), // Field 1: URL
+            Constraint::Length(2), // Fields 2, 3, 4: Codec, Sample Rate, Bit Depth (Horizontal)
+            Constraint::Length(2), // Field 5: Tags
+            Constraint::Min(4),    // Status / Help
+        ])
+        .split(inner);
+
+    // Field 0: Name
+    let cur0 = if state.active_field == 0 { "█" } else { "" };
+    let sty0 = if state.active_field == 0 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let name_line = Line::from(vec![
+        Span::styled(" Name:       ", sty0),
+        Span::styled(
+            format!("{}{}", state.name_input, cur0),
+            if state.active_field == 0 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(name_line), chunks[0]);
+
+    // Field 1: URL
+    let cur1 = if state.active_field == 1 { "█" } else { "" };
+    let sty1 = if state.active_field == 1 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let url_line = Line::from(vec![
+        Span::styled(" URL:        ", sty1),
+        Span::styled(
+            format!("{}{}", state.url_input, cur1),
+            if state.active_field == 1 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(url_line), chunks[1]);
+
+    // Row for Codec, Sample Rate, Bit Depth
+    let row_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33), // Codec
+            Constraint::Percentage(37), // Sample Rate
+            Constraint::Percentage(30), // Bit Depth
+        ])
+        .split(chunks[2]);
+
+    // Field 2: Codec
+    let cur2 = if state.active_field == 2 { "█" } else { "" };
+    let sty2 = if state.active_field == 2 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let codec_line = Line::from(vec![
+        Span::styled(" Codec: ", sty2),
+        Span::styled(
+            format!("{}{}", state.codec_input, cur2),
+            if state.active_field == 2 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(codec_line), row_chunks[0]);
+
+    // Field 3: Sample Rate
+    let cur3 = if state.active_field == 3 { "█" } else { "" };
+    let sty3 = if state.active_field == 3 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let sr_line = Line::from(vec![
+        Span::styled(" Rate(Hz): ", sty3),
+        Span::styled(
+            format!("{}{}", state.sample_rate_input, cur3),
+            if state.active_field == 3 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(sr_line), row_chunks[1]);
+
+    // Field 4: Bit Depth
+    let cur4 = if state.active_field == 4 { "█" } else { "" };
+    let sty4 = if state.active_field == 4 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let bits_line = Line::from(vec![
+        Span::styled(" Bits: ", sty4),
+        Span::styled(
+            format!("{}{}", state.bit_depth_input, cur4),
+            if state.active_field == 4 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(bits_line), row_chunks[2]);
+
+    // Field 5: Tags
+    let cur5 = if state.active_field == 5 { "█" } else { "" };
+    let sty5 = if state.active_field == 5 {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let tags_line = Line::from(vec![
+        Span::styled(" Tags:       ", sty5),
+        Span::styled(
+            format!("{}{}", state.tags_input, cur5),
+            if state.active_field == 5 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            },
+        ),
+    ]);
+    f.render_widget(Paragraph::new(tags_line), chunks[3]);
+
+    // Status / Helper
+    let mut footer_lines = Vec::new();
+    if let Some(ref msg) = state.probe_message {
+        footer_lines.push(Line::from(vec![Span::styled(
+            format!(" {}", msg),
+            if msg.contains("✓") {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Yellow)
+            },
+        )]));
+    } else {
+        footer_lines.push(Line::raw(""));
+    }
+
+    footer_lines.push(Line::from(vec![
+        Span::styled(
+            "[Enter] ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Save to stations.toml    ",
+            Style::default().fg(Color::White),
+        ),
+        Span::styled(
+            "[Ctrl+T / t] ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Re-probe URL Format", Style::default().fg(Color::Gray)),
+    ]));
+    footer_lines.push(Line::from(vec![
+        Span::styled(
+            "[Tab / ↑↓] ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Next Field    ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "[Ctrl+U] ",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Clear    ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "[Esc] ",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("Cancel", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    f.render_widget(Paragraph::new(footer_lines), chunks[4]);
+}
+
+/// Renders confirmation modal for deleting a station.
+fn render_confirm_delete_station_modal(f: &mut Frame, station_name: &str, area: Rect) {
+    let popup_width = 60.min(area.width.saturating_sub(4));
+    let popup_height = 8;
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .title(" Delete Station ")
+        .border_style(Style::default().fg(Color::Red));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content = vec![
+        Line::raw(""),
+        Line::from(vec![Span::styled(
+            "Are you sure you want to remove this station?",
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(vec![
+            Span::styled("Station: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                station_name,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(
+                "[y / Enter / d] ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Confirm Delete   ", Style::default().fg(Color::White)),
+            Span::styled(
+                "[n / Esc / c] ",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Cancel", Style::default().fg(Color::Gray)),
+        ]),
+    ];
+
+    f.render_widget(Paragraph::new(content).alignment(Alignment::Center), inner);
+}
+
+/// Renders confirmation modal for deleting a liked track.
+fn render_confirm_delete_liked_modal(f: &mut Frame, track_title: &str, area: Rect) {
+    let popup_width = 60.min(area.width.saturating_sub(4));
+    let popup_height = 8;
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .title(" Delete Liked Track ")
+        .border_style(Style::default().fg(Color::Yellow));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let content = vec![
+        Line::raw(""),
+        Line::from(vec![Span::styled(
+            "Remove this track from liked history?",
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(vec![
+            Span::styled("Track: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                track_title,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(
+                "[y / Enter / d] ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Confirm Delete   ", Style::default().fg(Color::White)),
+            Span::styled(
+                "[n / Esc / c] ",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Cancel", Style::default().fg(Color::Gray)),
+        ]),
+    ];
+
+    f.render_widget(Paragraph::new(content).alignment(Alignment::Center), inner);
+}
+
 /// Renders the Help modal popup.
 fn render_help_modal(f: &mut Frame, area: Rect) {
     let popup_area = Rect {
@@ -1757,19 +2626,23 @@ fn render_help_modal(f: &mut Frame, area: Rect) {
 
   Playback Controls:
     Space               Toggle Play / Pause
-    Enter               Play selected station / search result
+    Enter / o           Play selected station / liked track / search result
     s                   Stop playback
     n / p               Next / Previous station
     + / =               Increase hardware volume (wpctl)
     - / _               Decrease hardware volume (wpctl)
     m                   Toggle mute
 
-  Audiophile & Actions:
+  Station & Playlist Management (Vim-Style):
+    a                   Add new station endpoint URL (probe & verify format)
+    e / c               Edit selected station parameters (codec, sample rate, bits, tags)
+    d / x               Delete selected station / liked track (with confirmation)
+    S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec)
     f                   Toggle favorite on selected station
+    y                   Yank / Copy station stream URL or track title to clipboard
     r                   Toggle lossless stream recording (~/Music/Radio/)
-    l                   Like / Bookmark track (~/.config/reso/liked_tracks.md)
-    c                   Copy current track title to clipboard
-    /                   Filter station list / Search
+    l                   Like / Bookmark playing track (~/.config/reso/liked_tracks.toml)
+    /                   Search Radio-Browser catalog / filter
 
   Navigation:
     1                   Switch to Stations tab
