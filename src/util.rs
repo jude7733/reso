@@ -95,9 +95,49 @@ pub fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+/// Truncates a string to max_len characters with ellipsis if needed.
+pub fn truncate_str(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_len.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
+
+/// Normalizes a radio stream URL for duplicate checking and identification
+/// by trimming protocol (http/https), trailing slashes, and whitespace.
+pub fn normalize_stream_url(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    if let Some(stripped) = trimmed.strip_prefix("https://") {
+        stripped.to_string()
+    } else if let Some(stripped) = trimmed.strip_prefix("http://") {
+        stripped.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_stream_url() {
+        assert_eq!(
+            normalize_stream_url("https://stream.radioparadise.com/flac/"),
+            "stream.radioparadise.com/flac"
+        );
+        assert_eq!(
+            normalize_stream_url("http://stream.radioparadise.com/flac"),
+            "stream.radioparadise.com/flac"
+        );
+        assert_eq!(
+            normalize_stream_url("stream.radioparadise.com/flac"),
+            "stream.radioparadise.com/flac"
+        );
+    }
 
     #[test]
     fn test_format_sample_rate() {
