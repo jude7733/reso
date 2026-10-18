@@ -90,5 +90,15 @@ pub enum AppAction {
     PlayPreview(String),
     RestorePreviousPlayback,
     UpdateStation(Station),
+    DiagnosticsReady(Box<crate::inspector::status::PipelineStatus>),
+    CoverArtReady {
+        url: String,
+        bytes: Vec<u8>,
+    },
+    RpMetadataReady {
+        metadata: Box<TrackMetadata>,
+        cover_bytes: Option<Vec<u8>>,
+    },
+    RpPollFinished,
     Quit,
 }

@@ -217,6 +217,26 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         let _ = app.config_manager.add_station(st);
                         app.catalog = app.config_manager.catalog.clone();
                     }
+                    AppAction::DiagnosticsReady(status) => {
+                        app.pipeline_status = *status;
+                        app.diagnostics_in_flight = false;
+                    }
+                    AppAction::CoverArtReady { url, bytes } => {
+                        app.cover_art_manager.load_image(&url, &bytes);
+                        app.track_metadata.cover_url = Some(url);
+                        app.update_mpris();
+                    }
+                    AppAction::RpMetadataReady { metadata, cover_bytes } => {
+                        app.rp_poll_in_flight = false;
+                        if let (Some(url), Some(bytes)) = (&metadata.cover_url, cover_bytes) {
+                            app.cover_art_manager.load_image(url, &bytes);
+                        }
+                        app.track_metadata = *metadata;
+                        app.update_mpris();
+                    }
+                    AppAction::RpPollFinished => {
+                        app.rp_poll_in_flight = false;
+                    }
                     AppAction::Quit => {
                         app.should_quit = true;
                     }

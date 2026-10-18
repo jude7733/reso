@@ -257,9 +257,8 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
 /// Renders the station catalog list on the left with selected station details & tags.
 fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     let is_focused = app.active_tab == ActiveTab::Stations && !app.search_input_active;
-    let filtered: Vec<crate::config::Station> =
-        app.filtered_stations().into_iter().cloned().collect();
-    let total_len = filtered.len();
+    let filtered_indices: Vec<usize> = app.filtered_station_indices().to_vec();
+    let total_len = filtered_indices.len();
 
     if total_len > 0 && app.station_list_index >= total_len {
         app.station_list_index = total_len - 1;
@@ -278,10 +277,11 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
-    let items: Vec<ListItem> = filtered
+    let items: Vec<ListItem> = filtered_indices
         .iter()
         .enumerate()
-        .map(|(idx, station)| {
+        .map(|(idx, &station_idx)| {
+            let station = &app.catalog.stations[station_idx];
             let is_selected = idx == app.station_list_index;
             let is_playing = app.current_station.as_ref().map(|s| &s.id) == Some(&station.id);
 
@@ -392,7 +392,9 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Render Selected Station Tags & Info Card
-    let selected_station = filtered.get(app.station_list_index);
+    let selected_station = filtered_indices
+        .get(app.station_list_index)
+        .and_then(|&idx| app.catalog.stations.get(idx));
     let card_lines = if let Some(st) = selected_station {
         let mut tag_spans = vec![Span::styled(
             "🏷 Tags: ",

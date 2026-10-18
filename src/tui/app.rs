@@ -227,6 +227,12 @@ pub struct App {
     pub tick_count: u64,
     pub should_quit: bool,
 
+    // Performance: cached filtered station indices to avoid per-frame cloning
+    cached_filtered_indices: Vec<usize>,
+    filtered_cache_dirty: bool,
+    pub diagnostics_in_flight: bool,
+    pub rp_poll_in_flight: bool,
+
     // Subsystems
     pub mpv_client: MpvClient,
     pub api_client: ApiClient,
@@ -252,6 +258,7 @@ impl App {
             config_manager.config.lastfm.clone(),
             config_manager.config.listenbrainz.clone(),
         );
+        let show_visualizer = config_manager.config.ui.show_visualizer;
 
         let mut app = Self {
             active_tab: ActiveTab::Stations,
@@ -281,10 +288,18 @@ impl App {
             liked_list_state: ListState::default(),
             modal_state: ModalState::None,
             help_scroll: 0,
-            visualizer_state: VisualizerState::default(),
+            visualizer_state: {
+                let mut vs = VisualizerState::default();
+                vs.show_visualizer = show_visualizer;
+                vs
+            },
             cover_art_manager: CoverArtManager::new(),
             tick_count: 0,
             should_quit: false,
+            cached_filtered_indices: Vec::new(),
+            filtered_cache_dirty: true,
+            diagnostics_in_flight: false,
+            rp_poll_in_flight: false,
             mpv_client,
             api_client,
             recorder,
@@ -346,48 +361,104 @@ impl App {
         self.refresh_hardware_volume();
     }
 
-    /// Returns the filtered and sorted list of stations matching `filter_query` and `station_sort_mode`.
-    pub fn filtered_stations(&self) -> Vec<&Station> {
+    /// Marks the cached filtered station indices as stale, forcing recomputation on next access.
+    pub fn invalidate_station_cache(&mut self) {
+        self.filtered_cache_dirty = true;
+    }
+
+    /// Returns cached filtered and sorted station indices. Recomputes only when dirty.
+    pub fn filtered_station_indices(&mut self) -> &[usize] {
+        if self.filtered_cache_dirty {
+            self.recompute_filtered_indices();
+            self.filtered_cache_dirty = false;
+        }
+        &self.cached_filtered_indices
+    }
+
+    /// Returns the number of filtered stations (uses cache).
+    pub fn filtered_station_count(&mut self) -> usize {
+        self.filtered_station_indices().len()
+    }
+
+    /// Returns a station reference by filtered index (uses cache).
+    pub fn filtered_station_at(&mut self, filtered_idx: usize) -> Option<&Station> {
+        let indices = if self.filtered_cache_dirty {
+            self.recompute_filtered_indices();
+            self.filtered_cache_dirty = false;
+            &self.cached_filtered_indices
+        } else {
+            &self.cached_filtered_indices
+        };
+        indices.get(filtered_idx).map(|&i| &self.catalog.stations[i])
+    }
+
+    /// Internal: recomputes filtered + sorted station indices from catalog.
+    fn recompute_filtered_indices(&mut self) {
         let q = self.filter_query.trim().to_lowercase();
-        let mut list: Vec<&Station> = if q.is_empty() {
-            self.catalog.stations.iter().collect()
+        let mut indices: Vec<usize> = if q.is_empty() {
+            (0..self.catalog.stations.len()).collect()
         } else {
             self.catalog
                 .stations
                 .iter()
-                .filter(|s| {
+                .enumerate()
+                .filter(|(_, s)| {
                     s.name.to_lowercase().contains(&q)
                         || s.codec.to_lowercase().contains(&q)
                         || s.tags.iter().any(|t| t.to_lowercase().contains(&q))
                 })
+                .map(|(i, _)| i)
                 .collect()
         };
 
+        let stations = &self.catalog.stations;
         match self.station_sort_mode {
             StationSortMode::Default => {}
             StationSortMode::NameAsc => {
-                list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                indices.sort_by(|&a, &b| {
+                    stations[a]
+                        .name
+                        .to_lowercase()
+                        .cmp(&stations[b].name.to_lowercase())
+                });
             }
             StationSortMode::NameDesc => {
-                list.sort_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase()));
+                indices.sort_by(|&a, &b| {
+                    stations[b]
+                        .name
+                        .to_lowercase()
+                        .cmp(&stations[a].name.to_lowercase())
+                });
             }
             StationSortMode::QualityDesc => {
-                list.sort_by(|a, b| {
-                    b.sample_rate
-                        .cmp(&a.sample_rate)
-                        .then_with(|| b.bit_depth.cmp(&a.bit_depth))
-                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                indices.sort_by(|&a, &b| {
+                    stations[b]
+                        .sample_rate
+                        .cmp(&stations[a].sample_rate)
+                        .then_with(|| stations[b].bit_depth.cmp(&stations[a].bit_depth))
+                        .then_with(|| {
+                            stations[a]
+                                .name
+                                .to_lowercase()
+                                .cmp(&stations[b].name.to_lowercase())
+                        })
                 });
             }
             StationSortMode::FavoritesFirst => {
-                list.sort_by(|a, b| {
-                    b.favorite
-                        .cmp(&a.favorite)
-                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                indices.sort_by(|&a, &b| {
+                    stations[b]
+                        .favorite
+                        .cmp(&stations[a].favorite)
+                        .then_with(|| {
+                            stations[a]
+                                .name
+                                .to_lowercase()
+                                .cmp(&stations[b].name.to_lowercase())
+                        })
                 });
             }
             StationSortMode::Codec => {
-                list.sort_by(|a, b| {
+                indices.sort_by(|&a, &b| {
                     let score = |c: &str| match c.to_uppercase().as_str() {
                         "FLAC" | "ALAC" => 1,
                         "OGG" | "OPUS" => 2,
@@ -395,15 +466,20 @@ impl App {
                         "MP3" => 4,
                         _ => 5,
                     };
-                    score(&a.codec)
-                        .cmp(&score(&b.codec))
-                        .then_with(|| b.sample_rate.cmp(&a.sample_rate))
-                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    score(&stations[a].codec)
+                        .cmp(&score(&stations[b].codec))
+                        .then_with(|| stations[b].sample_rate.cmp(&stations[a].sample_rate))
+                        .then_with(|| {
+                            stations[a]
+                                .name
+                                .to_lowercase()
+                                .cmp(&stations[b].name.to_lowercase())
+                        })
                 });
             }
         }
 
-        list
+        self.cached_filtered_indices = indices;
     }
 
     /// Handles prober completion event for both Add and Edit modals.
@@ -499,7 +575,7 @@ impl App {
             }
             KeyCode::Char('3') => {
                 self.active_tab = ActiveTab::Inspector;
-                self.refresh_pipeline_diagnostics();
+                self.trigger_pipeline_diagnostics();
             }
             KeyCode::Char('4') => {
                 self.active_tab = ActiveTab::Liked;
@@ -542,12 +618,12 @@ impl App {
             // Edit Station ('e' or 'c' on Stations tab) / Copy track info on Liked tab
             KeyCode::Char('e') | KeyCode::Char('c') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let filtered = self.filtered_stations();
-                    if let Some(st) = filtered.get(self.station_list_index) {
+                    if let Some(st) = self.filtered_station_at(self.station_list_index) {
+                        let st_clone = st.clone();
                         self.modal_state =
-                            ModalState::EditStation(EditStationState::from_station(st));
+                            ModalState::EditStation(EditStationState::from_station(&st_clone));
                     }
-                }
+                },
                 ActiveTab::Liked => {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
                         let _ = copy_to_clipboard(&format!("{} - {}", track.artist, track.title));
@@ -562,6 +638,7 @@ impl App {
             KeyCode::Char('S') => {
                 self.station_sort_mode = self.station_sort_mode.next();
                 self.station_list_index = 0;
+                self.invalidate_station_cache();
             }
 
             // Tab-specific Actions: Add Station ('a')
@@ -573,6 +650,7 @@ impl App {
                     if let Some(st) = self.search_results.get(self.search_results_index) {
                         let _ = self.config_manager.add_station(st.clone());
                         self.catalog = self.config_manager.catalog.clone();
+                        self.invalidate_station_cache();
                     }
                 }
                 _ => {}
@@ -581,8 +659,7 @@ impl App {
             // Delete Station or Liked Track (vim 'd' or 'x')
             KeyCode::Char('d') | KeyCode::Char('x') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let filtered = self.filtered_stations();
-                    if let Some(st) = filtered.get(self.station_list_index) {
+                    if let Some(st) = self.filtered_station_at(self.station_list_index) {
                         self.modal_state = ModalState::ConfirmDeleteStation {
                             station_id: st.id.clone(),
                             station_name: st.name.clone(),
@@ -603,9 +680,9 @@ impl App {
             // Yank / Copy (vim 'y')
             KeyCode::Char('y') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let filtered = self.filtered_stations();
-                    if let Some(st) = filtered.get(self.station_list_index) {
-                        let _ = copy_to_clipboard(&st.url);
+                    if let Some(st) = self.filtered_station_at(self.station_list_index) {
+                        let url = st.url.clone();
+                        let _ = copy_to_clipboard(&url);
                     }
                 }
                 ActiveTab::Liked => {
@@ -618,20 +695,19 @@ impl App {
 
             // Favorite
             KeyCode::Char('f') => {
-                let filtered = self.filtered_stations();
-                if let Some(st) = filtered.get(self.station_list_index) {
+                if let Some(st) = self.filtered_station_at(self.station_list_index) {
                     let id = st.id.clone();
                     self.config_manager.toggle_favorite(&id);
                     self.catalog = self.config_manager.catalog.clone();
+                    self.invalidate_station_cache();
                 }
             }
 
             // Play selected item ('Enter' or 'o')
             KeyCode::Enter | KeyCode::Char('o') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let filtered = self.filtered_stations();
-                    if let Some(st) = filtered.get(self.station_list_index) {
-                        let station_clone = (*st).clone();
+                    if let Some(st) = self.filtered_station_at(self.station_list_index) {
+                        let station_clone = st.clone();
                         let _ = self.action_tx.send(AppAction::Play(station_clone)).await;
                     }
                 }
@@ -660,7 +736,7 @@ impl App {
             // Up / Down navigation (j / k / arrows)
             KeyCode::Down | KeyCode::Char('j') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let len = self.filtered_stations().len();
+                    let len = self.filtered_station_count();
                     if len > 0 {
                         self.station_list_index = (self.station_list_index + 1) % len;
                     }
@@ -681,7 +757,7 @@ impl App {
             },
             KeyCode::Up | KeyCode::Char('k') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let len = self.filtered_stations().len();
+                    let len = self.filtered_station_count();
                     if len > 0 {
                         if self.station_list_index == 0 {
                             self.station_list_index = len - 1;
@@ -714,7 +790,7 @@ impl App {
             },
             KeyCode::PageDown => match self.active_tab {
                 ActiveTab::Stations => {
-                    let len = self.filtered_stations().len();
+                    let len = self.filtered_station_count();
                     if len > 0 {
                         self.station_list_index = (self.station_list_index + 5).min(len - 1);
                     }
@@ -759,7 +835,7 @@ impl App {
             },
             KeyCode::End | KeyCode::Char('G') => match self.active_tab {
                 ActiveTab::Stations => {
-                    let len = self.filtered_stations().len();
+                    let len = self.filtered_station_count();
                     if len > 0 {
                         self.station_list_index = len - 1;
                     }
@@ -1256,30 +1332,33 @@ impl App {
 
                     if let (Some(artist), Some(title)) = (artist_opt, title_opt) {
                         if !artist.trim().is_empty() && !title.trim().is_empty() {
-                            if let Ok(Some(cover_url)) = self
-                                .api_client
-                                .search_itunes_cover_art(&artist, &title)
-                                .await
-                            {
-                                if let Ok(bytes) =
-                                    self.api_client.download_image_bytes(&cover_url).await
+                            let api_client = self.api_client.clone();
+                            let action_tx = self.action_tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(Some(cover_url)) =
+                                    api_client.search_itunes_cover_art(&artist, &title).await
                                 {
-                                    self.cover_art_manager.load_image(&cover_url, &bytes);
-                                    self.track_metadata.cover_url = Some(cover_url);
-                                    self.update_mpris();
+                                    if let Ok(bytes) =
+                                        api_client.download_image_bytes(&cover_url).await
+                                    {
+                                        let _ = action_tx
+                                            .send(AppAction::CoverArtReady {
+                                                url: cover_url,
+                                                bytes,
+                                            })
+                                            .await;
+                                    }
                                 }
-                            }
+                            });
                         }
                     }
                 }
             }
             MpvEvent::AudioParams(p) => {
                 self.stream_params = p;
-                self.refresh_pipeline_diagnostics();
+                self.trigger_pipeline_diagnostics();
             }
-            MpvEvent::Volume(_vol) => {
-                self.refresh_pipeline_diagnostics();
-            }
+            MpvEvent::Volume(_vol) => {}
             MpvEvent::RecordingState { is_recording, path } => {
                 self.is_recording = is_recording;
                 self.active_recording_path = path;
@@ -1288,7 +1367,35 @@ impl App {
         }
     }
 
-    /// Re-evaluates the 3-stage audiophile pipeline diagnostics.
+    /// Triggers an asynchronous re-evaluation of the 3-stage audiophile pipeline diagnostics off-thread.
+    pub fn trigger_pipeline_diagnostics(&mut self) {
+        if self.diagnostics_in_flight {
+            return;
+        }
+
+        self.diagnostics_in_flight = true;
+        let stream_params = self.stream_params.clone();
+        let media_rate = self
+            .current_station
+            .as_ref()
+            .map(|s| s.sample_rate)
+            .filter(|&r| r > 0);
+        let action_tx = self.action_tx.clone();
+
+        tokio::spawn(async move {
+            let status_res = tokio::task::spawn_blocking(move || {
+                PipelineStatus::evaluate(&stream_params, 100.0, media_rate)
+            })
+            .await;
+            if let Ok(status) = status_res {
+                let _ = action_tx
+                    .send(AppAction::DiagnosticsReady(Box::new(status)))
+                    .await;
+            }
+        });
+    }
+
+    /// Re-evaluates the 3-stage audiophile pipeline diagnostics synchronously.
     pub fn refresh_pipeline_diagnostics(&mut self) {
         let media_rate = self
             .current_station
@@ -1326,6 +1433,7 @@ impl App {
         self.tick_count = self.tick_count.wrapping_add(1);
 
         // Advance visualizer state
+        self.visualizer_state.show_visualizer = self.config_manager.config.ui.show_visualizer;
         self.visualizer_state.tick();
 
         // Check scrobble threshold
@@ -1344,26 +1452,38 @@ impl App {
 
             // Periodic diagnostics refresh
             if self.playback_state == PlaybackState::Playing && self.tick_count % 100 == 0 {
-                self.refresh_pipeline_diagnostics();
+                self.trigger_pipeline_diagnostics();
             }
 
-            // If playing a Radio Paradise station, poll rich metadata
-            if let Some(st) = &self.current_station {
-                if let Some(chan) = st.rp_channel {
-                    if let Ok(Some(rp_meta)) =
-                        self.api_client.fetch_radioparadise_now_playing(chan).await
-                    {
-                        if self.track_metadata.title != rp_meta.title {
-                            if let Some(cover_url) = &rp_meta.cover_url {
-                                if let Ok(bytes) =
-                                    self.api_client.download_image_bytes(cover_url).await
-                                {
-                                    self.cover_art_manager.load_image(cover_url, &bytes);
+            // If playing a Radio Paradise station, poll rich metadata off-thread
+            if !self.rp_poll_in_flight {
+                if let Some(st) = &self.current_station {
+                    if let Some(chan) = st.rp_channel {
+                        self.rp_poll_in_flight = true;
+                        let api_client = self.api_client.clone();
+                        let action_tx = self.action_tx.clone();
+                        let current_title = self.track_metadata.title.clone();
+                        tokio::spawn(async move {
+                            if let Ok(Some(rp_meta)) =
+                                api_client.fetch_radioparadise_now_playing(chan).await
+                            {
+                                if current_title.as_deref() != rp_meta.title.as_deref() {
+                                    let cover_bytes = if let Some(cover_url) = &rp_meta.cover_url {
+                                        api_client.download_image_bytes(cover_url).await.ok()
+                                    } else {
+                                        None
+                                    };
+                                    let _ = action_tx
+                                        .send(AppAction::RpMetadataReady {
+                                            metadata: Box::new(rp_meta),
+                                            cover_bytes,
+                                        })
+                                        .await;
+                                    return;
                                 }
                             }
-                            self.track_metadata = rp_meta;
-                            self.update_mpris();
-                        }
+                            let _ = action_tx.send(AppAction::RpPollFinished).await;
+                        });
                     }
                 }
             }

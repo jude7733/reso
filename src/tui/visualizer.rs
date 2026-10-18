@@ -15,9 +15,12 @@ const BARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 /// State for the dynamic audio spectrum visualizer.
 pub struct VisualizerState {
     pub is_playing: bool,
+    pub show_visualizer: bool,
     pub step: u64,
     pub bands: Vec<f32>,
     pub peak_caps: Vec<f32>,
+    pub peak_hold_timers: [u8; NUM_BANDS],
+    pub peak_velocities: [f32; NUM_BANDS],
     pub capture: AudioCapture,
     pub analyzer: SpectrumAnalyzer,
     sample_scratch: [f32; FFT_SIZE],
@@ -28,6 +31,7 @@ impl std::fmt::Debug for VisualizerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VisualizerState")
             .field("is_playing", &self.is_playing)
+            .field("show_visualizer", &self.show_visualizer)
             .field("step", &self.step)
             .field("bands_len", &self.bands.len())
             .field("is_capturing", &self.capture.is_active())
@@ -39,9 +43,12 @@ impl Default for VisualizerState {
     fn default() -> Self {
         Self {
             is_playing: false,
+            show_visualizer: true,
             step: 0,
             bands: vec![0.0; NUM_BANDS],
             peak_caps: vec![0.0; NUM_BANDS],
+            peak_hold_timers: [0; NUM_BANDS],
+            peak_velocities: [0.0; NUM_BANDS],
             capture: AudioCapture::new(),
             analyzer: SpectrumAnalyzer::new(),
             sample_scratch: [0.0; FFT_SIZE],
@@ -74,8 +81,8 @@ impl VisualizerState {
     pub fn tick(&mut self) {
         self.step = self.step.wrapping_add(1);
 
-        if !self.is_playing {
-            // Stop audio capture when playback is paused or stopped
+        if !self.is_playing || !self.show_visualizer {
+            // Stop audio capture when playback is paused or stopped, or visualizer is disabled
             if self.capture.is_active() {
                 self.capture.stop();
             }
@@ -90,11 +97,13 @@ impl VisualizerState {
             for cap in &mut self.peak_caps {
                 *cap = (*cap - 0.04).max(0.0);
             }
+            self.peak_hold_timers.fill(0);
+            self.peak_velocities.fill(0.0);
             return;
         }
 
-        // Ensure capture is running when playing
-        if !self.capture.is_active() {
+        // Ensure capture is running and process is genuinely alive (self-healing)
+        if !self.capture.is_alive() {
             self.capture.start();
         }
 
@@ -115,11 +124,20 @@ impl VisualizerState {
                     self.bands[i] = (self.bands[i] * 0.82).max(0.0);
                 }
 
-                // Update peak hold caps
+                // Update peak hold caps with realistic physics (hold suspended, then gravity fall)
                 if self.bands[i] >= self.peak_caps[i] {
                     self.peak_caps[i] = self.bands[i];
+                    self.peak_hold_timers[i] = 4; // Hold peak floating for 4 ticks (~200ms)
+                    self.peak_velocities[i] = 0.0;
+                } else if self.peak_hold_timers[i] > 0 {
+                    // Still in hold phase: keep peak cap suspended in air
+                    self.peak_hold_timers[i] -= 1;
                 } else {
-                    self.peak_caps[i] = (self.peak_caps[i] - 0.025).max(self.bands[i]).max(0.0);
+                    // Gravity falloff: accelerate downward
+                    self.peak_velocities[i] = (self.peak_velocities[i] + 0.008).min(0.06);
+                    self.peak_caps[i] = (self.peak_caps[i] - self.peak_velocities[i])
+                        .max(self.bands[i])
+                        .max(0.0);
                 }
             }
         } else {
@@ -133,6 +151,8 @@ impl VisualizerState {
             for cap in &mut self.peak_caps {
                 *cap = (*cap - 0.04).max(0.0);
             }
+            self.peak_hold_timers.fill(0);
+            self.peak_velocities.fill(0.0);
         }
     }
 }
@@ -159,22 +179,28 @@ impl Widget for VisualizerWidget<'_> {
         }
 
         for x in 0..num_bars {
-            let band_idx = (x * num_bands) / num_bars;
-            let amp = self
-                .state
-                .bands
-                .get(band_idx)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-
-            let peak_amp = self
-                .state
-                .peak_caps
-                .get(band_idx)
-                .copied()
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
+            // Smooth cosine curve interpolation across terminal width
+            let (amp, peak_amp) = if num_bars > 1 && num_bands > 1 {
+                let pos = (x as f32 / (num_bars - 1) as f32) * (num_bands - 1) as f32;
+                let idx0 = (pos.floor() as usize).min(num_bands - 1);
+                let idx1 = (idx0 + 1).min(num_bands - 1);
+                let frac = pos - idx0 as f32;
+                // Cosine curve easing: s-curve transition between bands
+                let t = (1.0 - (frac * std::f32::consts::PI).cos()) * 0.5;
+                let a0 = self.state.bands[idx0];
+                let a1 = self.state.bands[idx1];
+                let p0 = self.state.peak_caps[idx0];
+                let p1 = self.state.peak_caps[idx1];
+                (
+                    (a0 * (1.0 - t) + a1 * t).clamp(0.0, 1.0),
+                    (p0 * (1.0 - t) + p1 * t).clamp(0.0, 1.0),
+                )
+            } else {
+                (
+                    self.state.bands.first().copied().unwrap_or(0.0).clamp(0.0, 1.0),
+                    self.state.peak_caps.first().copied().unwrap_or(0.0).clamp(0.0, 1.0),
+                )
+            };
 
             let total_height = amp * max_height;
             let full_cells = total_height.floor() as u16;
@@ -185,37 +211,44 @@ impl Widget for VisualizerWidget<'_> {
             for y in 0..area.height {
                 let cell_y = area.bottom().saturating_sub(1 + y);
 
+                // Multi-tier Audiophile Studio Gradient based on vertical elevation
+                let norm_y = if area.height > 1 {
+                    y as f32 / (area.height - 1) as f32
+                } else {
+                    0.0
+                };
+
+                let cell_color = if norm_y > 0.85 {
+                    Color::Rgb(255, 195, 75) // Amber peak glow
+                } else if norm_y > 0.60 {
+                    Color::Rgb(140, 215, 255) // Electric Cyan / Ice Blue
+                } else if norm_y > 0.30 {
+                    Color::Rgb(72, 190, 230) // Vibrant Sky Blue
+                } else {
+                    Color::Rgb(0, 150, 195) // Deep Ocean Teal
+                };
+
                 if y < full_cells {
                     // Full block
-                    let color = if y > area.height * 2 / 3 {
-                        self.highlight_color
-                    } else {
-                        self.primary_color
-                    };
                     buf[(col, cell_y)]
                         .set_char('█')
-                        .set_style(Style::default().fg(color));
+                        .set_style(Style::default().fg(cell_color));
                 } else if y == full_cells && remainder > 0.05 {
                     // Partial block fraction
                     let idx = ((remainder * 8.0).floor() as usize).clamp(0, 7);
-                    let color = if y > area.height * 2 / 3 {
-                        self.highlight_color
-                    } else {
-                        self.primary_color
-                    };
                     buf[(col, cell_y)]
                         .set_char(BARS[idx])
-                        .set_style(Style::default().fg(color));
+                        .set_style(Style::default().fg(cell_color));
                 }
             }
 
-            // Draw floating peak cap dot if above current bar
+            // Draw floating peak cap dot if above current bar with glowing highlight
             let peak_y = (peak_amp * max_height).floor() as u16;
-            if peak_y > full_cells && peak_y < area.height && peak_amp > 0.08 {
+            if peak_y > full_cells && peak_y < area.height && peak_amp > 0.06 {
                 let cell_y = area.bottom().saturating_sub(1 + peak_y);
                 buf[(col, cell_y)]
                     .set_char('▔')
-                    .set_style(Style::default().fg(self.highlight_color));
+                    .set_style(Style::default().fg(Color::Rgb(255, 230, 140)));
             }
         }
     }

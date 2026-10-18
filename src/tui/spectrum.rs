@@ -46,9 +46,38 @@ impl AudioCapture {
         }
     }
 
-    /// Checks if audio capture is currently running.
+    /// Checks if audio capture is marked active.
     pub fn is_active(&self) -> bool {
         self.is_active
+    }
+
+    /// Checks if the underlying capture process is genuinely alive and running.
+    /// If the child process has terminated (e.g. PipeWire node restart or sink switch),
+    /// resets internal state so that it can be cleanly restarted.
+    pub fn is_alive(&mut self) -> bool {
+        if !self.is_active {
+            return false;
+        }
+
+        if let Some(ref mut child) = self.child {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    // Child process has terminated
+                    self.is_active = false;
+                    self.child = None;
+                    false
+                }
+                Ok(None) => true,
+                Err(_) => {
+                    self.is_active = false;
+                    self.child = None;
+                    false
+                }
+            }
+        } else {
+            // In headless/test mode or failed child spawn
+            self.is_active
+        }
     }
 
     /// Starts capturing raw PCM audio from PipeWire/PulseAudio monitor sink in a background worker.
@@ -130,6 +159,7 @@ impl AudioCapture {
                 let mut reader = stdout;
                 // Buffer for 512 stereo 16-bit frames = 512 * 2 channels * 2 bytes = 2048 bytes
                 let mut raw_buf = [0u8; 2048];
+                let mut mono_buf = [0.0f32; 512];
 
                 while !stop_flag.load(Ordering::Relaxed) {
                     match reader.read(&mut raw_buf) {
@@ -138,14 +168,13 @@ impl AudioCapture {
                             break;
                         }
                         Ok(bytes_read) => {
-                            let frame_count = bytes_read / 4;
+                            let frame_count = (bytes_read / 4).min(512);
                             if frame_count == 0 {
                                 continue;
                             }
 
                             // Convert 16-bit stereo PCM to normalized mono float [-1.0, 1.0]
-                            let mut temp_mono = Vec::with_capacity(frame_count);
-                            for i in 0..frame_count {
+                            for (i, sample) in mono_buf[..frame_count].iter_mut().enumerate() {
                                 let offset = i * 4;
                                 let left =
                                     i16::from_le_bytes([raw_buf[offset], raw_buf[offset + 1]])
@@ -153,13 +182,12 @@ impl AudioCapture {
                                 let right =
                                     i16::from_le_bytes([raw_buf[offset + 2], raw_buf[offset + 3]])
                                         as f32;
-                                let mono = (left + right) / (2.0 * 32768.0);
-                                temp_mono.push(mono);
+                                *sample = (left + right) / (2.0 * 32768.0);
                             }
 
                             // Push to circular buffer with lock
                             if let Ok(mut lock) = samples_buf.lock() {
-                                for sample in temp_mono {
+                                for &sample in &mono_buf[..frame_count] {
                                     lock.push_back(sample);
                                 }
                                 // Keep buffer size bounded to prevent unbounded memory growth
