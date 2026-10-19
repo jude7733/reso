@@ -8,6 +8,7 @@ use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::StatefulImage;
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 
 /// Maximum number of decoded album covers kept in memory.
 const MAX_CACHE_SIZE: usize = 16;
@@ -28,6 +29,7 @@ pub struct CoverArtManager {
     cache: HashMap<String, StatefulProtocol>,
     cache_order: VecDeque<String>,
     current_image_key: Option<String>,
+    app_icon: Option<StatefulProtocol>,
 }
 
 impl Default for CoverArtManager {
@@ -37,14 +39,103 @@ impl Default for CoverArtManager {
 }
 
 impl CoverArtManager {
+    /// Discovers the path to the installed or local application icon following standard Linux paths.
+    pub fn find_app_icon_path() -> Option<PathBuf> {
+        // 1. Check local assets folder in current working directory (e.g. dev/repo run)
+        let local_paths = [
+            PathBuf::from("assets/reso.png"),
+            PathBuf::from("../assets/reso.png"),
+            PathBuf::from("../../assets/reso.png"),
+        ];
+        for p in &local_paths {
+            if p.exists() {
+                return Some(p.clone());
+            }
+        }
+
+        // 2. Check executable relative path (e.g. /usr/bin/reso -> /usr/share/icons/...)
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(bin_dir) = exe_path.parent() {
+                let exe_rel = [
+                    bin_dir.join("../share/icons/hicolor/256x256/apps/reso.png"),
+                    bin_dir.join("../share/reso/reso.png"),
+                    bin_dir.join("../assets/reso.png"),
+                ];
+                for p in &exe_rel {
+                    if p.exists() {
+                        return Some(p.clone());
+                    }
+                }
+            }
+        }
+
+        // 3. Check XDG User Data directory (~/.local/share/...)
+        if let Some(base_dirs) = directories::BaseDirs::new() {
+            let data_home = base_dirs.data_dir();
+            let user_paths = [
+                data_home.join("icons/hicolor/256x256/apps/reso.png"),
+                data_home.join("icons/reso.png"),
+                data_home.join("reso/reso.png"),
+            ];
+            for p in &user_paths {
+                if p.exists() {
+                    return Some(p.clone());
+                }
+            }
+        }
+
+        // 4. Check system-wide standard FHS locations
+        let system_paths = [
+            PathBuf::from("/usr/local/share/icons/hicolor/256x256/apps/reso.png"),
+            PathBuf::from("/usr/share/icons/hicolor/256x256/apps/reso.png"),
+            PathBuf::from("/usr/share/pixmaps/reso.png"),
+            PathBuf::from("/usr/share/reso/reso.png"),
+        ];
+        for p in &system_paths {
+            if p.exists() {
+                return Some(p.clone());
+            }
+        }
+
+        None
+    }
+
     /// Creates a new `CoverArtManager`, automatically querying terminal graphics protocol support.
     pub fn new() -> Self {
-        let picker = Picker::from_query_stdio().ok();
+        let mut picker = Picker::from_query_stdio().ok();
+        let app_icon = picker.as_mut().and_then(|p| {
+            Self::find_app_icon_path().and_then(|path| {
+                image::open(path)
+                    .ok()
+                    .map(|img| p.new_resize_protocol(img))
+            })
+        });
         Self {
             picker,
             cache: HashMap::new(),
             cache_order: VecDeque::new(),
             current_image_key: None,
+            app_icon,
+        }
+    }
+
+    /// Returns true if a graphical application icon is available.
+    pub fn has_app_icon(&self) -> bool {
+        self.app_icon.is_some()
+    }
+
+    /// Renders the embedded application icon (`assets/reso.png`) into the specified area.
+    /// Returns `true` if rendered graphically, or `false` if graphics are unavailable.
+    pub fn render_app_icon(&mut self, area: Rect, buf: &mut Buffer) -> bool {
+        if area.width < 1 || area.height < 1 {
+            return false;
+        }
+        if let Some(protocol) = &mut self.app_icon {
+            let image_widget = StatefulImage::new(None);
+            StatefulWidget::render(image_widget, area, buf, protocol);
+            true
+        } else {
+            false
         }
     }
 

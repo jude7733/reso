@@ -61,34 +61,52 @@ pub fn render(f: &mut Frame, app: &mut App) {
 }
 
 /// Renders the top header bar with title, tabs, and status badges.
-fn render_header(f: &mut Frame, app: &App, area: Rect) {
+fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(12), // Logo & App Name (Icon + RESO)
+            Constraint::Length(13), // Logo & App Name (reso.png Icon + RESO)
             Constraint::Min(45),    // Navigation Tabs
             Constraint::Length(35), // Status & Bit-Perfect Badges
         ])
         .split(area);
 
-    // 1. Logo
-    let logo_text = vec![Line::from(vec![
-        Span::styled(
-            "📻 RESO",
+    // 1. Logo Block with embedded assets/reso.png icon
+    let logo_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner_logo = logo_block.inner(chunks[0]);
+    f.render_widget(logo_block, chunks[0]);
+
+    if inner_logo.width >= 6 && inner_logo.height >= 1 {
+        let icon_rect = Rect {
+            x: inner_logo.x + 1,
+            y: inner_logo.y,
+            width: 2,
+            height: 1,
+        };
+        let icon_rendered = app.cover_art_manager.render_app_icon(icon_rect, f.buffer_mut());
+
+        let text_x = if icon_rendered {
+            inner_logo.x + 4
+        } else {
+            inner_logo.x + (inner_logo.width.saturating_sub(4)) / 2
+        };
+        let text_rect = Rect {
+            x: text_x,
+            y: inner_logo.y,
+            width: 4.min(inner_logo.width),
+            height: 1,
+        };
+        let logo_text = Paragraph::new(Span::styled(
+            "RESO",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-        ),
-    ])];
-    let logo_widget = Paragraph::new(logo_text)
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Cyan)),
-        );
-    f.render_widget(logo_widget, chunks[0]);
+        ));
+        f.render_widget(logo_text, text_rect);
+    }
 
     // 2. Navigation Tabs
     let tab_items = [
