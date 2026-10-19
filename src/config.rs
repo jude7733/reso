@@ -66,6 +66,10 @@ pub struct UiConfig {
     /// TUI color theme ("audiophile_dark", "cyberpunk", "monochrome").
     #[serde(default = "default_theme")]
     pub theme: String,
+
+    /// Default station list sorting mode ("favorites", "default", "quality", "name_asc", "name_desc", "codec").
+    #[serde(default = "default_sort_mode")]
+    pub default_sort_mode: String,
 }
 
 fn default_true() -> bool {
@@ -80,12 +84,17 @@ fn default_theme() -> String {
     "audiophile_dark".to_string()
 }
 
+fn default_sort_mode() -> String {
+    "favorites".to_string()
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_visualizer: true,
             cover_mode: default_cover_mode(),
             theme: default_theme(),
+            default_sort_mode: default_sort_mode(),
         }
     }
 }

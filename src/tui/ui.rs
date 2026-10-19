@@ -3,7 +3,8 @@
 use crate::events::PlaybackState;
 use crate::inspector::status::BitPerfectVerdict;
 use crate::tui::app::{
-    ActiveTab, AddStationState, AddStationStep, App, EditStationState, ModalState,
+    ActiveTab, AddStationState, AddStationStep, App, EditStationState, ModalState, StationSortMode,
+    ToastLevel,
 };
 use crate::tui::visualizer::VisualizerWidget;
 use crate::util::{format_duration, format_sample_rate};
@@ -64,8 +65,8 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(20), // Logo & App Name
-            Constraint::Min(30),    // Navigation Tabs
+            Constraint::Length(22), // Logo & App Name
+            Constraint::Min(45),    // Navigation Tabs
             Constraint::Length(35), // Status & Bit-Perfect Badges
         ])
         .split(area);
@@ -73,7 +74,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     // 1. Logo
     let logo_text = vec![Line::from(vec![
         Span::styled(
-            "RESO ",
+            "📻 RESO ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -94,6 +95,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ("2:Search", ActiveTab::Search),
         ("3:Inspector", ActiveTab::Inspector),
         ("4:Liked", ActiveTab::Liked),
+        ("5:Settings", ActiveTab::Settings),
     ];
     let tab_spans: Vec<Span> = tab_items
         .iter()
@@ -234,8 +236,8 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(40), // Stations List
-                    Constraint::Percentage(60), // Now Playing + Compact Audiophile Path
+                    Constraint::Percentage(42), // Stations List
+                    Constraint::Percentage(58), // Now Playing + Compact Audiophile Path
                 ])
                 .split(area);
 
@@ -250,6 +252,9 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
         }
         ActiveTab::Liked => {
             render_liked_tab(f, app, area);
+        }
+        ActiveTab::Settings => {
+            render_settings_tab(f, app, area);
         }
     }
 }
@@ -323,7 +328,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .width
                 .saturating_sub(badge_width as u16 + prefix_width + 4)
                 as usize)
-                .clamp(12, 45);
+                .max(12);
             let truncated_name = crate::util::truncate_str(&station.name, max_name_width);
             let padded_name = format!("{:<width$}", truncated_name, width = max_name_width);
 
@@ -357,11 +362,21 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         Color::DarkGray
     };
-    let title = format!(
-        " Stations ({}) [Sort: {}] ",
-        total_len,
-        app.station_sort_mode.display_label()
-    );
+    let title = if !app.filter_query.is_empty() {
+        format!(
+            " Stations ({}/{}) [Filter: \"{}\"] [Sort: {}] ",
+            total_len,
+            app.catalog.stations.len(),
+            app.filter_query,
+            app.station_sort_mode.display_label()
+        )
+    } else {
+        format!(
+            " Stations ({}) [Sort: {}] ",
+            total_len,
+            app.station_sort_mode.display_label()
+        )
+    };
 
     let list_widget = List::new(items)
         .block(
@@ -491,15 +506,15 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         PlaybackState::Playing => Span::styled(
             " ▶ PLAYING ",
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Green)
+                .fg(Color::White)
+                .bg(Color::Rgb(0, 160, 80))
                 .add_modifier(Modifier::BOLD),
         ),
         PlaybackState::Paused => Span::styled(
             " ⏸ PAUSED ",
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Yellow)
+                .bg(Color::Rgb(240, 180, 40))
                 .add_modifier(Modifier::BOLD),
         ),
         _ => Span::styled(
@@ -551,6 +566,25 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         )
     });
 
+    let elapsed_badge = if app.playback_state == PlaybackState::Playing {
+        if let Some(started) = app.track_started_at {
+            let elapsed_secs = started.elapsed().as_secs();
+            let mins = elapsed_secs / 60;
+            let secs = elapsed_secs % 60;
+            Some(Span::styled(
+                format!(" ⏱ {:02}:{:02} ", mins, secs),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .bg(Color::Rgb(20, 35, 50))
+                    .add_modifier(Modifier::BOLD),
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Track Metadata & Music Player Typography
     let station_name = app
         .current_station
@@ -558,12 +592,30 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|s| s.name.clone())
         .unwrap_or_else(|| "No Station Selected".to_string());
 
-    let track_title = app.track_metadata.title.clone().unwrap_or_else(|| {
-        app.track_metadata
-            .raw_title
-            .clone()
-            .unwrap_or_else(|| "No Track Playing".to_string())
-    });
+    let raw_title_opt = app
+        .track_metadata
+        .title
+        .clone()
+        .or_else(|| app.track_metadata.raw_title.clone());
+
+    let track_title = if let Some(raw) = raw_title_opt {
+        if raw.contains(".flac?")
+            || raw.contains(".aac?")
+            || raw.starts_with("http://")
+            || raw.starts_with("https://")
+            || (raw.ends_with(".flac") && raw.contains('-'))
+        {
+            if station_name != "No Station Selected" {
+                format!("Live Broadcast • {}", station_name)
+            } else {
+                "Connecting to stream...".to_string()
+            }
+        } else {
+            raw
+        }
+    } else {
+        "No Track Playing".to_string()
+    };
 
     let artist_name = app.track_metadata.artist.clone();
 
@@ -636,10 +688,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         None
     };
 
-    // Assemble Metadata lines
-    let mut meta_lines = Vec::new();
-
-    // Line 1: Header status badges
+    // Header status badges
     let mut header_spans = vec![playback_badge];
     if let Some(f_span) = fav_span {
         header_spans.push(Span::raw(" "));
@@ -653,17 +702,12 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         header_spans.push(Span::raw(" "));
         header_spans.push(s_span);
     }
-    meta_lines.push(Line::from(header_spans));
+    if let Some(e_span) = elapsed_badge {
+        header_spans.push(Span::raw(" "));
+        header_spans.push(e_span);
+    }
 
-    // Line 2: Track Title (Hero Element)
-    meta_lines.push(Line::from(vec![Span::styled(
-        track_title,
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    )]));
-
-    // Line 3: Artist & Album info
+    // Artist & Album info
     let mut artist_spans = Vec::new();
     if let Some(art) = artist_name {
         if !art.trim().is_empty() && art != "—" && art != "-" {
@@ -683,22 +727,8 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         artist_spans.push(Span::styled("💿 ", Style::default().fg(Color::DarkGray)));
         artist_spans.push(Span::styled(album_year, Style::default().fg(Color::Gray)));
     }
-    if !artist_spans.is_empty() {
-        meta_lines.push(Line::from(artist_spans));
-    }
 
-    // Line 4: Station Name
-    meta_lines.push(Line::from(vec![
-        Span::styled("📻 ", Style::default().fg(Color::Cyan)),
-        Span::styled(
-            station_name,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]));
-
-    // Line 5: Format Component Pills (full width single row or split if narrow)
+    // Assemble Format Component Pills
     let mut format_spans = vec![
         codec_pill,
         Span::raw(" "),
@@ -712,30 +742,134 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         format_spans.push(Span::raw(" "));
         format_spans.push(badge);
     }
-    meta_lines.push(Line::from(format_spans));
 
-    // Vertical Split: Metadata on top, Cover Art / Centerpiece on bottom
-    let meta_height = (meta_lines.len() as u16).min(inner_area.height);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(meta_height), Constraint::Min(3)])
-        .split(inner_area);
+    // Adaptive Layout: Classic Left-Anchored Player when wide enough, vertical stack when narrow
+    if inner_area.width >= 55 {
+        // Square cover art: 1 character cell height ~ 2 cell width
+        let max_allowed_width = (inner_area.width * 36) / 100;
+        let available_height = inner_area.height.saturating_sub(1);
+        let art_width = ((available_height * 2) as u16).min(max_allowed_width).max(10);
+        let art_height = (art_width / 2).min(available_height);
+        let left_col_width = art_width + 3; // Artwork width + 3 cols margin
 
-    f.render_widget(Paragraph::new(meta_lines), chunks[0]);
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(left_col_width), // Left: Album Art
+                Constraint::Min(25),                // Right: Track Details & Badges
+            ])
+            .split(inner_area);
 
-    // Cover Art in lower pane
-    if chunks.len() > 1 && chunks[1].height >= 4 && chunks[1].width >= 8 {
-        let art_height = chunks[1].height.saturating_sub(1).min(14);
-        let art_width = (art_height * 2).min(chunks[1].width);
-        let art_x = chunks[1].x + (chunks[1].width.saturating_sub(art_width)) / 2;
-        let art_y = chunks[1].y + (chunks[1].height.saturating_sub(art_height)) / 2;
-        let art_rect = Rect {
-            x: art_x,
-            y: art_y,
-            width: art_width,
-            height: art_height,
+        // 1. Render Cover Art on Left, centered vertically
+        if chunks[0].width >= 8 && chunks[0].height >= 4 {
+            let art_y = chunks[0].y + (chunks[0].height.saturating_sub(art_height)) / 2;
+            let art_x = chunks[0].x + 1; // 1 col margin from left card border
+            let art_rect = Rect {
+                x: art_x,
+                y: art_y,
+                width: art_width,
+                height: art_height,
+            };
+            app.cover_art_manager.render(art_rect, f.buffer_mut());
+        }
+
+        // 2. Assemble Metadata lines with balanced vertical breathing room
+        let mut meta_lines = Vec::new();
+        let add_spacing = chunks[1].height >= 8;
+
+        // Line 1: Header status badges (Playback, Fav, Rec, Sleep, Elapsed Timer)
+        meta_lines.push(Line::from(header_spans));
+
+        if add_spacing {
+            meta_lines.push(Line::raw(""));
+        }
+
+        // Line 2: Track Title (Large / Bold Hero)
+        meta_lines.push(Line::from(vec![Span::styled(
+            track_title,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )]));
+
+        // Line 3: Artist & Album info
+        if !artist_spans.is_empty() {
+            meta_lines.push(Line::from(artist_spans));
+        }
+
+        // Line 4: Station Name
+        meta_lines.push(Line::from(vec![
+            Span::styled("📻 ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                station_name,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+
+        if add_spacing {
+            meta_lines.push(Line::raw(""));
+        }
+
+        // Line 5: Format Component Pills (Codec, Rate, Bits, Bitrate, Quality)
+        meta_lines.push(Line::from(format_spans));
+
+        // Center metadata vertically inside right pane so it balances with the left cover art
+        let meta_height = meta_lines.len() as u16;
+        let y_offset = (chunks[1].height.saturating_sub(meta_height)) / 2;
+        let text_area = Rect {
+            x: chunks[1].x,
+            y: chunks[1].y + y_offset,
+            width: chunks[1].width,
+            height: chunks[1].height.saturating_sub(y_offset),
         };
-        app.cover_art_manager.render(art_rect, f.buffer_mut());
+        f.render_widget(Paragraph::new(meta_lines), text_area);
+    } else {
+        // Vertical Split: Metadata on top, Cover Art on bottom
+        let mut meta_lines = Vec::new();
+        meta_lines.push(Line::from(header_spans));
+        meta_lines.push(Line::from(vec![Span::styled(
+            track_title,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )]));
+        if !artist_spans.is_empty() {
+            meta_lines.push(Line::from(artist_spans));
+        }
+        meta_lines.push(Line::from(vec![
+            Span::styled("📻 ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                station_name,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        meta_lines.push(Line::from(format_spans));
+
+        let meta_height = (meta_lines.len() as u16).min(inner_area.height);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(meta_height), Constraint::Min(3)])
+            .split(inner_area);
+
+        f.render_widget(Paragraph::new(meta_lines), chunks[0]);
+
+        if chunks.len() > 1 && chunks[1].height >= 4 && chunks[1].width >= 8 {
+            let art_height = chunks[1].height.saturating_sub(1).min(12);
+            let art_width = (art_height * 2).min(chunks[1].width);
+            let art_x = chunks[1].x + (chunks[1].width.saturating_sub(art_width)) / 2;
+            let art_y = chunks[1].y + (chunks[1].height.saturating_sub(art_height)) / 2;
+            let art_rect = Rect {
+                x: art_x,
+                y: art_y,
+                width: art_width,
+                height: art_height,
+            };
+            app.cover_art_manager.render(art_rect, f.buffer_mut());
+        }
     }
 }
 
@@ -876,22 +1010,50 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(viz_widget, area);
 }
 
-/// Renders the bottom keybindings status bar.
-fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
+/// Renders the bottom keybindings status bar or active toast notification.
+fn render_footer(f: &mut Frame, app: &App, area: Rect) {
+    if let Some(ref toast) = app.toast {
+        let (fg, bg, icon) = match toast.level {
+            ToastLevel::Success => (Color::White, Color::Rgb(0, 140, 60), " ✓ "),
+            ToastLevel::Error => (Color::White, Color::Rgb(200, 30, 30), " ✗ "),
+            ToastLevel::Warning => (Color::Black, Color::Yellow, " ⚠ "),
+            ToastLevel::Info => (Color::Black, Color::Cyan, " ℹ "),
+        };
+        let line = Line::from(vec![
+            Span::styled(
+                icon,
+                Style::default()
+                    .fg(fg)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {} ", toast.message),
+                Style::default()
+                    .fg(fg)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        let toast_widget = Paragraph::new(line).alignment(Alignment::Center);
+        f.render_widget(toast_widget, area);
+        return;
+    }
+
     let keys = vec![
         ("Space", "Pause"),
         ("Enter", "Play"),
         ("a", "Add"),
-        ("e/c", "Edit"),
+        ("e", "Edit"),
         ("d/x", "Del"),
         ("S", "Sort"),
-        ("y", "Copy"),
+        ("y/c", "Copy"),
         ("f", "Fav"),
         ("r", "Rec"),
         ("l", "Like"),
         ("+/-", "Vol"),
         ("/", "Filter"),
-        ("1-4", "Tabs"),
+        ("1-5", "Tabs"),
         ("?", "Help"),
         ("q", "Quit"),
     ];
@@ -916,13 +1078,13 @@ fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
     f.render_widget(footer_widget, area);
 }
 
-/// Renders the Search tab targeting Radio-Browser API.
+/// Renders the Search tab targeting Radio-Browser API with 2-pane preview and discovery guide.
 fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Query Input
-            Constraint::Min(8),    // Results List
+            Constraint::Min(8),    // Results / Discovery Body
         ])
         .split(area);
 
@@ -946,6 +1108,98 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
         app.search_list_state.select(Some(app.search_results_index));
     }
 
+    if total_len == 0 {
+        // Helpful Discovery Guide when idle or no results
+        let guide_lines = vec![
+            Line::from(vec![
+                Span::styled("📻 ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "Lossless Radio Discovery Guide",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::raw(""),
+            Line::from(vec![
+                Span::styled("Type a query above and press ", Style::default().fg(Color::Gray)),
+                Span::styled("[Enter]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" to query 30,000+ public radio streams via Radio-Browser.info.", Style::default().fg(Color::Gray)),
+            ]),
+            Line::raw(""),
+            Line::from(vec![
+                Span::styled("Curated Audiophile & Lossless Search Terms:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("flac", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("       - Lossless FLAC streams worldwide (CD-quality / Hi-Res)", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("jazz", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("       - High fidelity jazz, blues, and acoustic performances", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("classical", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  - Symphonies, concertos, opera, and baroque archives", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("ambient", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("    - Atmospheric soundscapes, meditation, and chillout", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("electronic", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(" - Techno, synthwave, trance, and IDM broadcasts", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("96khz", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("      - Studio Master 24-bit 96 kHz high-resolution feeds", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled("paradise", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("   - Radio Paradise commercial-free eclectic mixes", Style::default().fg(Color::Gray)),
+            ]),
+            Line::raw(""),
+            Line::from(vec![
+                Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
+                Span::styled("Play Stream  •  ", Style::default().fg(Color::Gray)),
+                Span::styled("['a'] ", Style::default().fg(Color::Yellow)),
+                Span::styled("Add to Catalog  •  ", Style::default().fg(Color::Gray)),
+                Span::styled("[j/k] ", Style::default().fg(Color::Cyan)),
+                Span::styled("Browse Results", Style::default().fg(Color::Gray)),
+            ]),
+        ];
+
+        let guide_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Radio Discovery ")
+            .border_style(Style::default().fg(Color::DarkGray));
+        let inner = guide_block.inner(chunks[1]);
+        f.render_widget(guide_block, chunks[1]);
+        f.render_widget(Paragraph::new(guide_lines), inner);
+        return;
+    }
+
+    // 2-Pane Results + Preview Layout when wide enough
+    let (list_area, preview_area) = if chunks[1].width >= 90 {
+        let sub = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(55), // Results List
+                Constraint::Percentage(45), // Station Preview Card
+            ])
+            .split(chunks[1]);
+        (sub[0], Some(sub[1]))
+    } else {
+        (chunks[1], None)
+    };
+
     let items: Vec<ListItem> = app
         .search_results
         .iter()
@@ -961,10 +1215,22 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::Gray)
             };
 
+            let rate_badge = format!("[{}]", s.codec);
+            let badge_width = rate_badge.len() + 2;
+            let max_name = (list_area.width.saturating_sub(badge_width as u16 + 4) as usize).max(10);
+            let trunc_name = truncate_str(&s.name, max_name);
+            let padded_name = format!("{:<width$}", trunc_name, width = max_name);
+
             let line = Line::from(vec![
-                Span::styled(format!("{:<32}", s.name), style),
-                Span::styled(format!("[{}] ", s.codec), Style::default().fg(Color::Cyan)),
-                Span::styled(s.tags.join(", "), Style::default().fg(Color::DarkGray)),
+                Span::styled(padded_name, style),
+                Span::styled(
+                    format!(" {}", rate_badge),
+                    if is_sel {
+                        Style::default().fg(Color::Rgb(140, 200, 255)).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    },
+                ),
             ]);
             ListItem::new(line)
         })
@@ -976,7 +1242,7 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(format!(
-                    " Search Results ({}) - [Enter: Play | 'a': Add to Catalog] ",
+                    " Search Results ({}) [Enter: Play | 'a': Add to Catalog] ",
                     total_len
                 ))
                 .border_style(Style::default().fg(Color::DarkGray)),
@@ -988,9 +1254,9 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(results_widget, chunks[1], &mut app.search_list_state);
+    f.render_stateful_widget(results_widget, list_area, &mut app.search_list_state);
 
-    let visible_height = chunks[1].height.saturating_sub(2) as usize;
+    let visible_height = list_area.height.saturating_sub(2) as usize;
     if total_len > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_len).position(app.search_results_index);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -998,7 +1264,75 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
             .end_symbol(Some("▼"))
             .track_symbol(Some("│"))
             .thumb_symbol("█");
-        f.render_stateful_widget(scrollbar, chunks[1], &mut scrollbar_state);
+        f.render_stateful_widget(scrollbar, list_area, &mut scrollbar_state);
+    }
+
+    // Right Preview Card for Selected Search Result
+    if let Some(p_area) = preview_area {
+        let selected_station = app.search_results.get(app.search_results_index);
+        let preview_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Station Preview & Details ")
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let inner = preview_block.inner(p_area);
+        f.render_widget(preview_block, p_area);
+
+        if let Some(s) = selected_station {
+            let rate_str = if s.sample_rate > 0 {
+                format_sample_rate(s.sample_rate)
+            } else {
+                "Lossless".to_string()
+            };
+            let bit_str = if s.bit_depth > 0 {
+                format!("{}-bit", s.bit_depth)
+            } else {
+                "16/24-bit".to_string()
+            };
+            let tags_str = if s.tags.is_empty() {
+                "none".to_string()
+            } else {
+                s.tags.join(", ")
+            };
+            let hp_str = s.homepage.as_deref().unwrap_or("—");
+
+            let preview_lines = vec![
+                Line::from(vec![
+                    Span::styled("📻 Station:  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&s.name, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled("🎵 Audio:    ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("[{}] ", s.codec), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("[{}] ", rate_str), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("[{}]", bit_str), Style::default().fg(Color::Rgb(255, 215, 100)).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("🏷 Tags:     ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(tags_str, Style::default().fg(Color::Yellow)),
+                ]),
+                Line::from(vec![
+                    Span::styled("🔗 Stream:   ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(truncate_str(&s.url, p_area.width.saturating_sub(15) as usize), Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::styled("🏠 Homepage: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(truncate_str(hp_str, p_area.width.saturating_sub(15) as usize), Style::default().fg(Color::Gray)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled("[Enter] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled("Play Stream  •  ", Style::default().fg(Color::Gray)),
+                    Span::styled("['a'] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled("Add to Catalog", Style::default().fg(Color::Gray)),
+                ]),
+            ];
+
+            f.render_widget(Paragraph::new(preview_lines), inner);
+        }
     }
 }
 
@@ -1766,7 +2100,21 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
     );
 }
 
-/// Renders the Liked Tracks history tab.
+/// Cleans markdown artifacts from legacy imported liked tracks.
+fn clean_legacy_str(s: &str) -> String {
+    let mut cleaned = s
+        .replace("**", "")
+        .replace('*', "")
+        .replace('`', "");
+    if let Some(pos) = cleaned.find("] ") {
+        if cleaned.starts_with('[') && pos < 25 {
+            cleaned = cleaned[pos + 2..].to_string();
+        }
+    }
+    cleaned.trim().to_string()
+}
+
+/// Renders the Liked Tracks history tab with master list and detailed track card.
 fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
     let total_len = app.liked_tracks.len();
     if total_len > 0 && app.liked_list_index >= total_len {
@@ -1777,6 +2125,19 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         app.liked_list_state.select(Some(app.liked_list_index));
     }
+
+    let (list_area, detail_area) = if area.width >= 90 {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(56), // List
+                Constraint::Percentage(44), // Detail Card
+            ])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
 
     let items: Vec<ListItem> = app
         .liked_tracks
@@ -1793,6 +2154,9 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::Gray)
             };
 
+            let clean_artist = clean_legacy_str(&track.artist);
+            let clean_title = clean_legacy_str(&track.title);
+
             let rate_str = track
                 .sample_rate
                 .map(|r| format!(" {}", format_sample_rate(r)))
@@ -1804,7 +2168,7 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
                     format!("[{}] ", track.timestamp),
                     Style::default().fg(Color::DarkGray),
                 ),
-                Span::styled(format!("{} - {}", track.artist, track.title), text_style),
+                Span::styled(format!("{} - {}", clean_artist, clean_title), text_style),
                 Span::styled(
                     format!(" [{}]", track.station),
                     Style::default().fg(Color::Cyan),
@@ -1818,15 +2182,17 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
+    let list_title = format!(
+        " Liked Tracks ({}) [d/x: Delete | y/c: Copy | Enter: Play Station] ",
+        total_len
+    );
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(format!(
-                    " Liked Tracks ({}) [d/x: Delete | y/c: Copy | Enter: Play Station] (~/.config/reso/liked_tracks.toml) ",
-                    total_len
-                ))
+                .title(list_title)
                 .border_style(Style::default().fg(Color::DarkGray)),
         )
         .highlight_style(
@@ -1836,9 +2202,9 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(list, area, &mut app.liked_list_state);
+    f.render_stateful_widget(list, list_area, &mut app.liked_list_state);
 
-    let visible_height = area.height.saturating_sub(2) as usize;
+    let visible_height = list_area.height.saturating_sub(2) as usize;
     if total_len > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_len).position(app.liked_list_index);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -1846,8 +2212,348 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
             .end_symbol(Some("▼"))
             .track_symbol(Some("│"))
             .thumb_symbol("█");
-        f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        f.render_stateful_widget(scrollbar, list_area, &mut scrollbar_state);
     }
+
+    // Detail Panel
+    if let Some(d_area) = detail_area {
+        let selected_track = app.liked_tracks.get(app.liked_list_index);
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Bookmarked Track Details ")
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let inner = detail_block.inner(d_area);
+        f.render_widget(detail_block, d_area);
+
+        if let Some(track) = selected_track {
+            let clean_artist = clean_legacy_str(&track.artist);
+            let clean_title = clean_legacy_str(&track.title);
+
+            let rate_str = track
+                .sample_rate
+                .map(|r| format_sample_rate(r))
+                .unwrap_or_else(|| "44.1 kHz".to_string());
+            let bit_depth_str = track
+                .bit_depth
+                .map(|b| format!("{}-bit", b))
+                .unwrap_or_else(|| "16-bit".to_string());
+            let codec_str = track.codec.as_deref().unwrap_or("FLAC");
+
+            let lines = vec![
+                Line::from(vec![
+                    Span::styled("🎵 Track:   ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(clean_title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("♪  Artist:  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(clean_artist, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("💿 Album:   ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(track.album.as_deref().unwrap_or("Single / Live Broadcast"), Style::default().fg(Color::Gray)),
+                ]),
+                Line::from(vec![
+                    Span::styled("📻 Station: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&track.station, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled("Audio Spec: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("[{}] ", codec_str), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("[{}] ", rate_str), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("[{}]", bit_depth_str), Style::default().fg(Color::Rgb(255, 215, 100)).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("🗓 Bookmarked: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(&track.timestamp, Style::default().fg(Color::DarkGray)),
+                ]),
+                Line::raw(""),
+                Line::from(vec![
+                    Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
+                    Span::styled("Tune Station  •  ", Style::default().fg(Color::Gray)),
+                    Span::styled("[c/y] ", Style::default().fg(Color::Cyan)),
+                    Span::styled("Copy  •  ", Style::default().fg(Color::Gray)),
+                    Span::styled("[d/x] ", Style::default().fg(Color::Yellow)),
+                    Span::styled("Delete", Style::default().fg(Color::Gray)),
+                ]),
+            ];
+
+            let p = Paragraph::new(lines);
+            f.render_widget(p, inner);
+        } else {
+            let empty_text = Paragraph::new("No track selected.\nPress 'l' while listening to bookmark tracks here.")
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(empty_text, inner);
+        }
+    }
+}
+
+/// Renders the Settings tab (Tab 5) for tuning reso options interactively.
+fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
+    let s = &app.settings_state;
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(28), // Categories Navigation List
+            Constraint::Min(40),    // Settings Form Panel
+        ])
+        .split(area);
+
+    // Left Column: Categories
+    let sections = [
+        ("🎨 UI & Appearance", 0),
+        ("📻 Playback & General", 1),
+        ("📊 Scrobbler Services", 2),
+        ("💾 Save Configuration", 3),
+    ];
+
+    let category_items: Vec<ListItem> = sections
+        .iter()
+        .map(|(label, idx)| {
+            let is_sel = s.selected_section == *idx;
+            let style = if is_sel {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            ListItem::new(format!("  {}  ", label)).style(style)
+        })
+        .collect();
+
+    let category_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Sections [h/l: Tab] ")
+        .border_style(Style::default().fg(Color::DarkGray));
+    f.render_widget(List::new(category_items).block(category_block), chunks[0]);
+
+    // Right Column: Active Category Form
+    let right_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Tune Configuration [j/k: Select | Space/Enter: Toggle/Edit] ")
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let form_area = right_block.inner(chunks[1]);
+    f.render_widget(right_block, chunks[1]);
+
+    let mut form_lines: Vec<Line> = Vec::new();
+
+    match s.selected_section {
+        0 => {
+            // UI & Appearance
+            form_lines.push(Line::from(vec![
+                Span::styled("APPEARANCE & DISPLAY PREFERENCES", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 0: Theme
+            let sel0 = s.selected_field == 0;
+            let cursor0 = if sel0 { "▶ " } else { "  " };
+            let style0 = if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor0, Style::default().fg(Color::Cyan)),
+                Span::styled("Color Theme:                ", style0),
+                Span::styled(format!("[ < {} > ]", s.theme), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to cycle: audiophile_dark, cyberpunk, monochrome)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 1: Visualizer
+            let sel1 = s.selected_field == 1;
+            let cursor1 = if sel1 { "▶ " } else { "  " };
+            let style1 = if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let (viz_check, viz_col) = if s.show_visualizer { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor1, Style::default().fg(Color::Cyan)),
+                Span::styled("Spectrum Visualizer:        ", style1),
+                Span::styled(viz_check, Style::default().fg(viz_col).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 2: Default Sort Mode
+            let sel2 = s.selected_field == 2;
+            let cursor2 = if sel2 { "▶ " } else { "  " };
+            let style2 = if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let sort_label = StationSortMode::from_str_key(&s.default_sort_mode).display_label();
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor2, Style::default().fg(Color::Cyan)),
+                Span::styled("Default Station Sort Mode:  ", style2),
+                Span::styled(format!("[ < {} > ]", sort_label), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to cycle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 3: Cover Art Mode
+            let sel3 = s.selected_field == 3;
+            let cursor3 = if sel3 { "▶ " } else { "  " };
+            let style3 = if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor3, Style::default().fg(Color::Cyan)),
+                Span::styled("Album Cover Renderer:       ", style3),
+                Span::styled(format!("[ < {} > ]", s.cover_mode), Style::default().fg(Color::Rgb(255, 140, 255)).add_modifier(Modifier::BOLD)),
+                Span::styled(" (auto, kitty, sixel, halfblocks, off)", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        1 => {
+            // Playback & General
+            form_lines.push(Line::from(vec![
+                Span::styled("PLAYBACK & DIRECTORY CONFIGURATION", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 0: Default Station ID
+            let sel0 = s.selected_field == 0;
+            let cursor0 = if sel0 { "▶ " } else { "  " };
+            let style0 = if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let val0 = if sel0 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.default_station_id.clone() };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor0, Style::default().fg(Color::Cyan)),
+                Span::styled("Default Station Slug:       ", style0),
+                Span::styled(format!("\"{}\"", val0), if sel0 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
+                Span::styled(" (e.g. rp-main, Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 1: Recording Directory
+            let sel1 = s.selected_field == 1;
+            let cursor1 = if sel1 { "▶ " } else { "  " };
+            let style1 = if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.record_dir.clone() };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor1, Style::default().fg(Color::Cyan)),
+                Span::styled("Stream Recording Directory: ", style1),
+                Span::styled(format!("\"{}\"", val1), if sel1 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
+                Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 2: MPV Socket Path
+            let sel2 = s.selected_field == 2;
+            let cursor2 = if sel2 { "▶ " } else { "  " };
+            let style2 = if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.socket_path.clone() };
+            form_lines.push(Line::from(vec![
+                Span::styled(cursor2, Style::default().fg(Color::Cyan)),
+                Span::styled("MPV Domain Socket Path:     ", style2),
+                Span::styled(format!("\"{}\"", val2), if sel2 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
+                Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        2 => {
+            // Scrobbler Services
+            form_lines.push(Line::from(vec![
+                Span::styled("LAST.FM & LISTENBRAINZ AUDIOSCROBBLER", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 0: Last.fm Enabled
+            let sel0 = s.selected_field == 0;
+            let (l_check, l_col) = if s.lastfm_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel0 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Last.fm Scrobbling:         ", if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(l_check, Style::default().fg(l_col).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 1: Last.fm Username
+            let sel1 = s.selected_field == 1;
+            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_username.is_empty() { "(not set)".to_string() } else { s.lastfm_username.clone() } };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel1 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Last.fm Username:           ", if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(val1, Style::default().fg(Color::Cyan)),
+                Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 2: Last.fm API Key
+            let sel2 = s.selected_field == 2;
+            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_key.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel2 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Last.fm API Key:            ", if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(val2, Style::default().fg(Color::Cyan)),
+                Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 3: ListenBrainz Enabled
+            let sel3 = s.selected_field == 3;
+            let (b_check, b_col) = if s.listenbrainz_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel3 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("ListenBrainz Scrobbling:    ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(b_check, Style::default().fg(b_col).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 4: ListenBrainz User Token
+            let sel4 = s.selected_field == 4;
+            let val4 = if sel4 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.listenbrainz_token.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("ListenBrainz User Token:    ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(val4, Style::default().fg(Color::Cyan)),
+                Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        3 => {
+            // Save & System
+            form_lines.push(Line::from(vec![
+                Span::styled("SYSTEM DIAGNOSTICS & PERSISTENCE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            form_lines.push(Line::from(vec![
+                Span::styled("• Audio Engine:        ", Style::default().fg(Color::DarkGray)),
+                Span::styled("MPV Lossless Decoder (Bit-Exact Unity Volume)", Style::default().fg(Color::White)),
+            ]));
+            form_lines.push(Line::from(vec![
+                Span::styled("• Sound Server:        ", Style::default().fg(Color::DarkGray)),
+                Span::styled("PipeWire Dynamic Multi-Rate Clock Graph", Style::default().fg(Color::Cyan)),
+            ]));
+            form_lines.push(Line::from(vec![
+                Span::styled("• Hardware Target:     ", Style::default().fg(Color::DarkGray)),
+                Span::styled(app.pipeline_status.alsa_card_name.as_deref().unwrap_or("ALSA USB DAC"), Style::default().fg(Color::Green)),
+            ]));
+            form_lines.push(Line::from(vec![
+                Span::styled("• Stations in Catalog:  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{} lossless & hi-res stations", app.catalog.stations.len()), Style::default().fg(Color::Cyan)),
+            ]));
+            form_lines.push(Line::from(vec![
+                Span::styled("• Bookmarked Tracks:   ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{} tracks in liked_tracks.toml", app.liked_tracks.len()), Style::default().fg(Color::Yellow)),
+            ]));
+            form_lines.push(Line::raw(""));
+            form_lines.push(Line::raw(""));
+
+            let save_btn = Line::from(vec![
+                Span::styled("▶ ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    " [ SAVE SETTINGS TO DISK (~/.config/reso/config.toml) ] ",
+                    Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  (Press Enter or Ctrl+S)", Style::default().fg(Color::DarkGray)),
+            ]);
+            form_lines.push(save_btn);
+        }
+        _ => {}
+    }
+
+    let form_paragraph = Paragraph::new(form_lines);
+    f.render_widget(form_paragraph, form_area);
 }
 
 /// Renders the Add Station modal wizard (Input URL -> Probing -> Verified / Confirm -> Save).
@@ -2624,16 +3330,18 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     d / x               Delete selected station / liked track (with confirmation)
     S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec)
     f                   Toggle favorite on selected station
-    y                   Yank / Copy station stream URL or track title to clipboard
+    y / c               Yank / Copy station stream URL or track title to clipboard
     r                   Toggle lossless stream recording (~/Music/Radio/)
     l                   Like / Bookmark playing track (~/.config/reso/liked_tracks.toml)
-    /                   Search Radio-Browser catalog / filter
+    /                   Search Radio-Browser catalog / filter stations
 
-  Navigation:
+  Navigation & Views:
     1                   Switch to Stations tab
-    2                   Switch to Search tab (radio-browser.info)
+    2                   Switch to Search tab (radio-browser.info discovery)
     3                   Switch to Audiophile Inspector tab
     4                   Switch to Liked Tracks history tab
+    5                   Switch to Settings & Preferences tab
+    Tab / BackTab       Cycle next / previous tab
     j / Down            Navigate down / Scroll help down
     k / Up              Navigate up / Scroll help up
     PgDn / d            Scroll down by page (5 lines)
@@ -2642,6 +3350,13 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     G / End             Jump to bottom
     ?                   Toggle this Help screen
     q / Esc             Quit Reso / Close modal
+
+  Settings Tab Controls:
+    Tab / BackTab       Cycle between settings categories (UI, Playback, Scrobbler, System)
+    j / k               Select configuration field
+    Space               Toggle boolean option or cycle setting choices
+    Enter               Edit text field / activate button
+    Ctrl+S              Save settings to disk (~/.config/reso/config.toml)
 
 =============================================================================
              Scroll: [j/k/PgUp/PgDn/g/G]  •  Close: [?/Esc/q]

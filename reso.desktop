@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Reso
+GenericName=Audiophile Lossless Internet Radio
+Comment=Bit-perfect lossless Internet radio streamer and PipeWire diagnostics monitor
+Exec=reso
+Icon=reso
+Terminal=true
+Categories=AudioVideo;Audio;Player;ConsoleOnly;
+Keywords=radio;flac;lossless;audiophile;pipewire;streamer;
+StartupNotify=false

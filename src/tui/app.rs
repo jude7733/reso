@@ -27,6 +27,91 @@ pub enum ActiveTab {
     Search,
     Inspector,
     Liked,
+    Settings,
+}
+
+/// Notification level for transient status messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastLevel {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+/// A transient toast notification shown in the footer or banner.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToastNotification {
+    pub message: String,
+    pub created_at: std::time::Instant,
+    pub duration: std::time::Duration,
+    pub level: ToastLevel,
+}
+
+/// Settings panel navigation and form state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingsState {
+    pub selected_section: usize, // 0: UI & Themes, 1: Playback & General, 2: Scrobbling, 3: System & Save
+    pub selected_field: usize,
+    pub is_editing_text: bool,
+    pub text_buffer: String,
+
+    // UI Preferences
+    pub theme: String,
+    pub show_visualizer: bool,
+    pub default_sort_mode: String,
+    pub cover_mode: String,
+
+    // General & Playback
+    pub default_station_id: String,
+    pub record_dir: String,
+    pub socket_path: String,
+
+    // Scrobbling
+    pub lastfm_enabled: bool,
+    pub lastfm_username: String,
+    pub lastfm_api_key: String,
+    pub listenbrainz_enabled: bool,
+    pub listenbrainz_token: String,
+}
+
+impl SettingsState {
+    pub fn from_config(config: &crate::config::AppConfig) -> Self {
+        Self {
+            selected_section: 0,
+            selected_field: 0,
+            is_editing_text: false,
+            text_buffer: String::new(),
+
+            theme: config.ui.theme.clone(),
+            show_visualizer: config.ui.show_visualizer,
+            default_sort_mode: config.ui.default_sort_mode.clone(),
+            cover_mode: config.ui.cover_mode.clone(),
+
+            default_station_id: config
+                .default_station_id
+                .clone()
+                .unwrap_or_else(|| "rp-main".to_string()),
+            record_dir: config.record_dir.to_string_lossy().to_string(),
+            socket_path: config.socket_path.to_string_lossy().to_string(),
+
+            lastfm_enabled: config.lastfm.enabled,
+            lastfm_username: config.lastfm.username.clone().unwrap_or_default(),
+            lastfm_api_key: config.lastfm.api_key.clone().unwrap_or_default(),
+            listenbrainz_enabled: config.listenbrainz.enabled,
+            listenbrainz_token: config.listenbrainz.user_token.clone().unwrap_or_default(),
+        }
+    }
+
+    pub fn fields_count(&self) -> usize {
+        match self.selected_section {
+            0 => 4, // Theme, Visualizer, Sort Mode, Cover Mode
+            1 => 3, // Default Station, Record Dir, Socket Path
+            2 => 5, // LastFM Enabled, LastFM User, LastFM Key, LB Enabled, LB Token
+            3 => 1, // Save Settings Button
+            _ => 1,
+        }
+    }
 }
 
 /// Modal dialog state for help, adding station, editing, or deletion confirmations.
@@ -78,6 +163,28 @@ impl StationSortMode {
             StationSortMode::NameAsc => StationSortMode::NameDesc,
             StationSortMode::NameDesc => StationSortMode::Codec,
             StationSortMode::Codec => StationSortMode::Default,
+        }
+    }
+
+    pub fn from_str_key(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "favorites" | "favoritesfirst" | "fav" => StationSortMode::FavoritesFirst,
+            "quality" | "qualitydesc" | "hires" => StationSortMode::QualityDesc,
+            "name_asc" | "name" | "az" => StationSortMode::NameAsc,
+            "name_desc" | "za" => StationSortMode::NameDesc,
+            "codec" => StationSortMode::Codec,
+            _ => StationSortMode::Default,
+        }
+    }
+
+    pub fn to_str_key(&self) -> &'static str {
+        match self {
+            StationSortMode::Default => "default",
+            StationSortMode::QualityDesc => "quality",
+            StationSortMode::FavoritesFirst => "favorites",
+            StationSortMode::NameAsc => "name_asc",
+            StationSortMode::NameDesc => "name_desc",
+            StationSortMode::Codec => "codec",
         }
     }
 }
@@ -233,6 +340,10 @@ pub struct App {
     pub diagnostics_in_flight: bool,
     pub rp_poll_in_flight: bool,
 
+    pub toast: Option<ToastNotification>,
+    pub track_started_at: Option<std::time::Instant>,
+    pub settings_state: SettingsState,
+
     // Subsystems
     pub mpv_client: MpvClient,
     pub api_client: ApiClient,
@@ -259,12 +370,15 @@ impl App {
             config_manager.config.listenbrainz.clone(),
         );
         let show_visualizer = config_manager.config.ui.show_visualizer;
+        let default_sort =
+            StationSortMode::from_str_key(&config_manager.config.ui.default_sort_mode);
+        let settings_state = SettingsState::from_config(&config_manager.config);
 
         let mut app = Self {
             active_tab: ActiveTab::Stations,
             config_manager,
             catalog,
-            station_sort_mode: StationSortMode::Default,
+            station_sort_mode: default_sort,
             current_station: None,
             station_list_index: 0,
             station_list_state: ListState::default(),
@@ -300,6 +414,9 @@ impl App {
             filtered_cache_dirty: true,
             diagnostics_in_flight: false,
             rp_poll_in_flight: false,
+            toast: None,
+            track_started_at: None,
+            settings_state,
             mpv_client,
             api_client,
             recorder,
@@ -312,9 +429,165 @@ impl App {
         app
     }
 
-    /// Loads and refreshes liked tracks from `config_manager`.
+    /// Shows a transient toast notification in the UI.
+    pub fn show_toast(&mut self, message: impl Into<String>, level: ToastLevel) {
+        self.toast = Some(ToastNotification {
+            message: message.into(),
+            created_at: std::time::Instant::now(),
+            duration: std::time::Duration::from_secs(3),
+            level,
+        });
+    }
+
+    /// Checks if the active toast has expired.
+    pub fn check_toast_expiry(&mut self) {
+        if let Some(ref t) = self.toast {
+            if t.created_at.elapsed() >= t.duration {
+                self.toast = None;
+            }
+        }
+    }
+
+    /// Cycles the station sort mode and persists preference to config.toml.
+    pub fn cycle_sort_mode(&mut self) {
+        self.station_sort_mode = self.station_sort_mode.next();
+        self.station_list_index = 0;
+        self.invalidate_station_cache();
+        self.config_manager.config.ui.default_sort_mode =
+            self.station_sort_mode.to_str_key().to_string();
+        self.settings_state.default_sort_mode =
+            self.station_sort_mode.to_str_key().to_string();
+        let _ = self.config_manager.save_config();
+        self.show_toast(
+            format!("Station sort: {}", self.station_sort_mode.display_label()),
+            ToastLevel::Info,
+        );
+    }
+
+    /// Saves pending settings form to config.toml and applies them immediately.
+    pub fn save_settings(&mut self) -> Result<()> {
+        let s = &self.settings_state;
+        self.config_manager.config.ui.theme = s.theme.clone();
+        self.config_manager.config.ui.show_visualizer = s.show_visualizer;
+        self.config_manager.config.ui.default_sort_mode = s.default_sort_mode.clone();
+        self.config_manager.config.ui.cover_mode = s.cover_mode.clone();
+
+        self.config_manager.config.default_station_id =
+            if s.default_station_id.trim().is_empty() {
+                None
+            } else {
+                Some(s.default_station_id.trim().to_string())
+            };
+        self.config_manager.config.record_dir = PathBuf::from(&s.record_dir);
+        self.config_manager.config.socket_path = PathBuf::from(&s.socket_path);
+
+        self.config_manager.config.lastfm.enabled = s.lastfm_enabled;
+        self.config_manager.config.lastfm.username = if s.lastfm_username.trim().is_empty() {
+            None
+        } else {
+            Some(s.lastfm_username.trim().to_string())
+        };
+        self.config_manager.config.lastfm.api_key = if s.lastfm_api_key.trim().is_empty() {
+            None
+        } else {
+            Some(s.lastfm_api_key.trim().to_string())
+        };
+
+        self.config_manager.config.listenbrainz.enabled = s.listenbrainz_enabled;
+        self.config_manager.config.listenbrainz.user_token =
+            if s.listenbrainz_token.trim().is_empty() {
+                None
+            } else {
+                Some(s.listenbrainz_token.trim().to_string())
+            };
+
+        self.visualizer_state.show_visualizer = s.show_visualizer;
+        self.station_sort_mode = StationSortMode::from_str_key(&s.default_sort_mode);
+        self.invalidate_station_cache();
+
+        self.config_manager.save_config()?;
+        self.show_toast(
+            "✓ Settings saved to ~/.config/reso/config.toml",
+            ToastLevel::Success,
+        );
+        Ok(())
+    }
+
+    /// Loads and refreshes liked tracks from `config_manager`, sanitizing any legacy imported tracks.
     pub fn load_liked_history(&mut self) {
-        self.liked_tracks = self.config_manager.liked_catalog.tracks.clone();
+        let mut tracks = self.config_manager.liked_catalog.tracks.clone();
+        for track in &mut tracks {
+            Self::sanitize_legacy_track(track);
+        }
+        self.liked_tracks = tracks;
+    }
+
+    /// Cleans and sanitizes legacy imported liked tracks that may contain raw markdown,
+    /// duplicated timestamps, or embedded metadata in the artist field.
+    pub fn sanitize_legacy_track(track: &mut crate::config::LikedTrack) {
+        if track.artist.contains("**") || track.artist.contains("[Station:") || track.title == "Liked Track" {
+            let raw = track.artist.clone();
+            // 1. Strip leading timestamp, e.g. `[2026-08-16 22:08:59]` or [2026-08-16 22:08:59]
+            let without_ts = if let Some(idx) = raw.find("]` ") {
+                &raw[idx + 3..]
+            } else if let Some(idx) = raw.find("] `") {
+                &raw[idx + 3..]
+            } else if let Some(idx) = raw.find("] ") {
+                &raw[idx + 2..]
+            } else {
+                &raw
+            };
+
+            // 2. Separate song title/artist from trailing metadata [Station: ...]
+            let (song_part, meta_part) = if let Some(m_idx) = without_ts.find(" [Station:") {
+                (&without_ts[..m_idx], Some(&without_ts[m_idx + 1..]))
+            } else {
+                (without_ts, None)
+            };
+
+            // 3. Parse Artist - Title
+            if let Some(dash_idx) = song_part.find(" - ") {
+                let art = song_part[..dash_idx].replace("**", "").replace('*', "").replace('`', "").trim().to_string();
+                let tit = song_part[dash_idx + 3..].replace("**", "").replace('*', "").replace('`', "").trim().to_string();
+                if !art.is_empty() {
+                    track.artist = art;
+                }
+                if !tit.is_empty() {
+                    track.title = tit;
+                }
+            } else {
+                let clean = song_part.replace("**", "").replace('*', "").replace('`', "").trim().to_string();
+                if !clean.is_empty() {
+                    track.artist = clean;
+                }
+            }
+
+            // 4. Parse [Station: ... | Codec: ... | Album: *...*]
+            if let Some(meta) = meta_part {
+                let clean_meta = meta.trim_start_matches('[').trim_end_matches(']');
+                for sec in clean_meta.split('|') {
+                    let part = sec.trim();
+                    if let Some(st) = part.strip_prefix("Station:") {
+                        let st_name = st.trim().to_string();
+                        if !st_name.is_empty() {
+                            track.station = st_name;
+                        }
+                    } else if let Some(alb) = part.strip_prefix("Album:") {
+                        let alb_name = alb.replace('*', "").trim().to_string();
+                        if !alb_name.is_empty() {
+                            track.album = Some(alb_name);
+                        }
+                    } else if let Some(cod) = part.strip_prefix("Codec:") {
+                        let cod_str = cod.trim();
+                        if let Some(paren) = cod_str.find('(') {
+                            track.codec = Some(cod_str[..paren].trim().to_string());
+                        } else {
+                            track.codec = Some(cod_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Queries the active hardware volume and mute status from PipeWire via `wpctl`.
@@ -559,7 +832,12 @@ impl App {
             return Ok(());
         }
 
-        // 3. Global Navigation & Actions
+        // 3. Settings Tab specific keyboard routing
+        if self.active_tab == ActiveTab::Settings {
+            return self.handle_settings_key_event(key).await;
+        }
+
+        // 4. Global Navigation & Actions
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
@@ -580,6 +858,41 @@ impl App {
             KeyCode::Char('4') => {
                 self.active_tab = ActiveTab::Liked;
                 self.load_liked_history();
+            }
+            KeyCode::Char('5') => {
+                self.active_tab = ActiveTab::Settings;
+            }
+            KeyCode::Tab => {
+                self.active_tab = match self.active_tab {
+                    ActiveTab::Stations => ActiveTab::Search,
+                    ActiveTab::Search => ActiveTab::Inspector,
+                    ActiveTab::Inspector => ActiveTab::Liked,
+                    ActiveTab::Liked => ActiveTab::Settings,
+                    ActiveTab::Settings => ActiveTab::Stations,
+                };
+                if self.active_tab == ActiveTab::Search {
+                    self.search_input_active = true;
+                } else if self.active_tab == ActiveTab::Liked {
+                    self.load_liked_history();
+                } else if self.active_tab == ActiveTab::Inspector {
+                    self.trigger_pipeline_diagnostics();
+                }
+            }
+            KeyCode::BackTab => {
+                self.active_tab = match self.active_tab {
+                    ActiveTab::Stations => ActiveTab::Settings,
+                    ActiveTab::Search => ActiveTab::Stations,
+                    ActiveTab::Inspector => ActiveTab::Search,
+                    ActiveTab::Liked => ActiveTab::Inspector,
+                    ActiveTab::Settings => ActiveTab::Liked,
+                };
+                if self.active_tab == ActiveTab::Search {
+                    self.search_input_active = true;
+                } else if self.active_tab == ActiveTab::Liked {
+                    self.load_liked_history();
+                } else if self.active_tab == ActiveTab::Inspector {
+                    self.trigger_pipeline_diagnostics();
+                }
             }
 
             // Playback controls
@@ -615,30 +928,52 @@ impl App {
                 let _ = self.action_tx.send(AppAction::BookmarkTrack).await;
             }
 
-            // Edit Station ('e' or 'c' on Stations tab) / Copy track info on Liked tab
-            KeyCode::Char('e') | KeyCode::Char('c') => match self.active_tab {
-                ActiveTab::Stations => {
+            // Edit Station ('e') on Stations tab
+            KeyCode::Char('e') => {
+                if self.active_tab == ActiveTab::Stations {
                     if let Some(st) = self.filtered_station_at(self.station_list_index) {
                         let st_clone = st.clone();
                         self.modal_state =
                             ModalState::EditStation(EditStationState::from_station(&st_clone));
                     }
-                },
+                }
+            }
+
+            // Copy ('c') - Copy track info across tabs with toast feedback
+            KeyCode::Char('c') => match self.active_tab {
                 ActiveTab::Liked => {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
-                        let _ = copy_to_clipboard(&format!("{} - {}", track.artist, track.title));
+                        let text = format!("{} - {}", track.artist, track.title);
+                        match copy_to_clipboard(&text) {
+                            Ok(_) => self.show_toast(
+                                format!("✓ Copied: {}", text),
+                                ToastLevel::Success,
+                            ),
+                            Err(e) => self.show_toast(
+                                format!("✗ Copy failed: {}", e),
+                                ToastLevel::Error,
+                            ),
+                        }
                     }
                 }
                 _ => {
-                    let _ = self.action_tx.send(AppAction::CopyTrackToClipboard).await;
+                    let title_str = self.track_metadata.display_name();
+                    match copy_to_clipboard(&title_str) {
+                        Ok(_) => self.show_toast(
+                            format!("✓ Copied: {}", title_str),
+                            ToastLevel::Success,
+                        ),
+                        Err(e) => self.show_toast(
+                            format!("✗ Copy failed: {}", e),
+                            ToastLevel::Error,
+                        ),
+                    }
                 }
             },
 
             // Cycle Sort Mode ('S' / Shift+S)
             KeyCode::Char('S') => {
-                self.station_sort_mode = self.station_sort_mode.next();
-                self.station_list_index = 0;
-                self.invalidate_station_cache();
+                self.cycle_sort_mode();
             }
 
             // Tab-specific Actions: Add Station ('a')
@@ -647,10 +982,14 @@ impl App {
                     self.modal_state = ModalState::AddStation(AddStationState::new());
                 }
                 ActiveTab::Search => {
-                    if let Some(st) = self.search_results.get(self.search_results_index) {
+                    if let Some(st) = self.search_results.get(self.search_results_index).cloned() {
                         let _ = self.config_manager.add_station(st.clone());
                         self.catalog = self.config_manager.catalog.clone();
                         self.invalidate_station_cache();
+                        self.show_toast(
+                            format!("✓ Added \"{}\" to catalog", st.name),
+                            ToastLevel::Success,
+                        );
                     }
                 }
                 _ => {}
@@ -682,12 +1021,31 @@ impl App {
                 ActiveTab::Stations => {
                     if let Some(st) = self.filtered_station_at(self.station_list_index) {
                         let url = st.url.clone();
-                        let _ = copy_to_clipboard(&url);
+                        match copy_to_clipboard(&url) {
+                            Ok(_) => self.show_toast(
+                                format!("✓ Copied URL: {}", url),
+                                ToastLevel::Success,
+                            ),
+                            Err(e) => self.show_toast(
+                                format!("✗ Copy failed: {}", e),
+                                ToastLevel::Error,
+                            ),
+                        }
                     }
                 }
                 ActiveTab::Liked => {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
-                        let _ = copy_to_clipboard(&format!("{} - {}", track.artist, track.title));
+                        let text = format!("{} - {}", track.artist, track.title);
+                        match copy_to_clipboard(&text) {
+                            Ok(_) => self.show_toast(
+                                format!("✓ Copied: {}", text),
+                                ToastLevel::Success,
+                            ),
+                            Err(e) => self.show_toast(
+                                format!("✗ Copy failed: {}", e),
+                                ToastLevel::Error,
+                            ),
+                        }
                     }
                 }
                 _ => {}
@@ -697,9 +1055,22 @@ impl App {
             KeyCode::Char('f') => {
                 if let Some(st) = self.filtered_station_at(self.station_list_index) {
                     let id = st.id.clone();
+                    let was_fav = st.favorite;
+                    let name = st.name.clone();
                     self.config_manager.toggle_favorite(&id);
                     self.catalog = self.config_manager.catalog.clone();
                     self.invalidate_station_cache();
+                    if was_fav {
+                        self.show_toast(
+                            format!("Removed \"{}\" from favorites", name),
+                            ToastLevel::Info,
+                        );
+                    } else {
+                        self.show_toast(
+                            format!("★ Added \"{}\" to favorites", name),
+                            ToastLevel::Success,
+                        );
+                    }
                 }
             }
 
@@ -719,9 +1090,19 @@ impl App {
                 }
                 ActiveTab::Liked => {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
-                        if let Some(st) = self.config_manager.find_station(&track.station) {
-                            let station_clone = st.clone();
-                            let _ = self.action_tx.send(AppAction::Play(station_clone)).await;
+                        let st_opt = self.config_manager.find_station(&track.station).cloned().or_else(|| {
+                            let query_lower = track.station.to_lowercase();
+                            self.catalog.stations.iter().find(|s| {
+                                s.name.to_lowercase().contains(&query_lower) || query_lower.contains(&s.name.to_lowercase())
+                            }).cloned()
+                        });
+                        if let Some(st) = st_opt {
+                            let _ = self.action_tx.send(AppAction::Play(st)).await;
+                        } else {
+                            self.show_toast(
+                                format!("Station \"{}\" not found in catalog", track.station),
+                                ToastLevel::Warning,
+                            );
                         }
                     }
                 }
@@ -1293,10 +1674,238 @@ impl App {
         Ok(())
     }
 
+    /// Handles keyboard events specific to ActiveTab::Settings.
+    pub async fn handle_settings_key_event(&mut self, key: KeyEvent) -> Result<()> {
+        if self.settings_state.is_editing_text {
+            match key.code {
+                KeyCode::Esc => {
+                    self.settings_state.is_editing_text = false;
+                }
+                KeyCode::Enter => {
+                    self.settings_state.is_editing_text = false;
+                    let val = self.settings_state.text_buffer.trim().to_string();
+                    match (
+                        self.settings_state.selected_section,
+                        self.settings_state.selected_field,
+                    ) {
+                        (1, 0) => self.settings_state.default_station_id = val,
+                        (1, 1) => self.settings_state.record_dir = val,
+                        (1, 2) => self.settings_state.socket_path = val,
+                        (2, 1) => self.settings_state.lastfm_username = val,
+                        (2, 2) => self.settings_state.lastfm_api_key = val,
+                        (2, 4) => self.settings_state.listenbrainz_token = val,
+                        _ => {}
+                    }
+                    self.show_toast("Field updated (press Ctrl+S to save)", ToastLevel::Info);
+                }
+                KeyCode::Backspace => {
+                    self.settings_state.text_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.settings_state.text_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Char('1') => self.active_tab = ActiveTab::Stations,
+            KeyCode::Char('2') => {
+                self.active_tab = ActiveTab::Search;
+                self.search_input_active = true;
+            }
+            KeyCode::Char('3') => {
+                self.active_tab = ActiveTab::Inspector;
+                self.trigger_pipeline_diagnostics();
+            }
+            KeyCode::Char('4') => {
+                self.active_tab = ActiveTab::Liked;
+                self.load_liked_history();
+            }
+            KeyCode::Char('5') => {}
+
+            KeyCode::Tab => {
+                self.active_tab = ActiveTab::Stations;
+            }
+            KeyCode::BackTab => {
+                self.active_tab = ActiveTab::Liked;
+                self.load_liked_history();
+            }
+
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('[') => {
+                if self.settings_state.selected_section == 0 {
+                    self.settings_state.selected_section = 3;
+                } else {
+                    self.settings_state.selected_section -= 1;
+                }
+                self.settings_state.selected_field = 0;
+            }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(']') => {
+                self.settings_state.selected_section =
+                    (self.settings_state.selected_section + 1) % 4;
+                self.settings_state.selected_field = 0;
+            }
+
+            KeyCode::Up | KeyCode::Char('k') => {
+                let count = self.settings_state.fields_count();
+                if self.settings_state.selected_field == 0 {
+                    self.settings_state.selected_field = count.saturating_sub(1);
+                } else {
+                    self.settings_state.selected_field -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let count = self.settings_state.fields_count();
+                if count > 0 {
+                    self.settings_state.selected_field =
+                        (self.settings_state.selected_field + 1) % count;
+                }
+            }
+
+            KeyCode::Char(' ') | KeyCode::Enter => match self.settings_state.selected_section {
+                0 => match self.settings_state.selected_field {
+                    0 => {
+                        self.settings_state.theme = match self.settings_state.theme.as_str() {
+                            "audiophile_dark" => "cyberpunk".to_string(),
+                            "cyberpunk" => "monochrome".to_string(),
+                            _ => "audiophile_dark".to_string(),
+                        };
+                        self.show_toast(
+                            format!("Theme switched to: {}", self.settings_state.theme),
+                            ToastLevel::Info,
+                        );
+                    }
+                    1 => {
+                        self.settings_state.show_visualizer =
+                            !self.settings_state.show_visualizer;
+                        let state_str = if self.settings_state.show_visualizer {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        };
+                        self.show_toast(
+                            format!("Visualizer {}", state_str),
+                            ToastLevel::Info,
+                        );
+                    }
+                    2 => {
+                        let curr = StationSortMode::from_str_key(
+                            &self.settings_state.default_sort_mode,
+                        );
+                        let nxt = curr.next();
+                        self.settings_state.default_sort_mode = nxt.to_str_key().to_string();
+                        self.show_toast(
+                            format!("Default Sort: {}", nxt.display_label()),
+                            ToastLevel::Info,
+                        );
+                    }
+                    3 => {
+                        self.settings_state.cover_mode =
+                            match self.settings_state.cover_mode.as_str() {
+                                "auto" => "kitty".to_string(),
+                                "kitty" => "sixel".to_string(),
+                                "sixel" => "halfblocks".to_string(),
+                                "halfblocks" => "off".to_string(),
+                                _ => "auto".to_string(),
+                            };
+                        self.show_toast(
+                            format!("Cover Art Mode: {}", self.settings_state.cover_mode),
+                            ToastLevel::Info,
+                        );
+                    }
+                    _ => {}
+                },
+                1 => match self.settings_state.selected_field {
+                    0 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.default_station_id.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    1 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.record_dir.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    2 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.socket_path.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    _ => {}
+                },
+                2 => match self.settings_state.selected_field {
+                    0 => {
+                        self.settings_state.lastfm_enabled =
+                            !self.settings_state.lastfm_enabled;
+                        let s = if self.settings_state.lastfm_enabled {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        };
+                        self.show_toast(format!("Last.fm {}", s), ToastLevel::Info);
+                    }
+                    1 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.lastfm_username.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    2 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.lastfm_api_key.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    3 => {
+                        self.settings_state.listenbrainz_enabled =
+                            !self.settings_state.listenbrainz_enabled;
+                        let s = if self.settings_state.listenbrainz_enabled {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        };
+                        self.show_toast(format!("ListenBrainz {}", s), ToastLevel::Info);
+                    }
+                    4 => {
+                        self.settings_state.text_buffer =
+                            self.settings_state.listenbrainz_token.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
+                    _ => {}
+                },
+                3 => {
+                    self.save_settings()?;
+                }
+                _ => {}
+            },
+
+            KeyCode::Char('s')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                self.save_settings()?;
+            }
+            KeyCode::Char('S') => {
+                self.save_settings()?;
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.should_quit = true;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
     /// Handles MPV IPC events pushed asynchronously.
     pub async fn handle_mpv_event(&mut self, event: MpvEvent) {
         match event {
             MpvEvent::State(s) => {
+                if s == PlaybackState::Playing && self.playback_state != PlaybackState::Playing {
+                    self.track_started_at = Some(std::time::Instant::now());
+                } else if s == PlaybackState::Stopped {
+                    self.track_started_at = None;
+                }
                 self.playback_state = s;
                 self.visualizer_state.is_playing = s == PlaybackState::Playing;
                 if s != PlaybackState::Playing {
@@ -1308,6 +1917,9 @@ impl App {
                 self.update_mpris();
             }
             MpvEvent::Metadata(m) => {
+                if self.track_metadata.title != m.title || self.track_metadata.raw_title != m.raw_title {
+                    self.track_started_at = Some(std::time::Instant::now());
+                }
                 self.track_metadata = m.clone();
                 self.scrobbler.on_track_change(m.clone()).await;
                 self.update_mpris();
@@ -1431,6 +2043,9 @@ impl App {
     /// Periodic UI tick (invoked every 50ms).
     pub async fn on_tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
+
+        // Check active toast notifications
+        self.check_toast_expiry();
 
         // Advance visualizer state
         self.visualizer_state.show_visualizer = self.config_manager.config.ui.show_visualizer;

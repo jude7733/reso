@@ -90,7 +90,10 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::Play(station) => {
                         let _ = app.mpv_client.load_file(&station.url).await;
                         let _ = app.mpv_client.resume().await;
+                        let name = station.name.clone();
                         app.current_station = Some(station);
+                        app.track_started_at = Some(std::time::Instant::now());
+                        app.show_toast(format!("▶ Tuning in: {}", name), crate::tui::app::ToastLevel::Info);
                         app.update_mpris();
                     }
                     AppAction::Pause => {
@@ -105,6 +108,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::Stop => {
                         let _ = app.mpv_client.stop().await;
                         app.current_station = None;
+                        app.track_started_at = None;
                         app.visualizer_state.stop_capture();
                         app.update_mpris();
                     }
@@ -115,6 +119,8 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = app.mpv_client.load_file(&st.url).await;
                             let _ = app.mpv_client.resume().await;
+                            app.track_started_at = Some(std::time::Instant::now());
+                            app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
                             app.update_mpris();
                         }
@@ -130,6 +136,8 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = app.mpv_client.load_file(&st.url).await;
                             let _ = app.mpv_client.resume().await;
+                            app.track_started_at = Some(std::time::Instant::now());
+                            app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
                             app.update_mpris();
                         }
@@ -137,15 +145,23 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::ToggleRecord => {
                         let st_name = app.current_station.as_ref().map(|s| s.name.as_str()).unwrap_or("Stream");
                         let track_str = app.track_metadata.display_name();
-                        let _ = app.recorder.toggle(st_name, Some(&track_str)).await;
+                        if let Ok(is_rec) = app.recorder.toggle(st_name, Some(&track_str)).await {
+                            if is_rec.is_some() {
+                                app.show_toast("🔴 Lossless recording started", crate::tui::app::ToastLevel::Warning);
+                            } else {
+                                app.show_toast("■ Recording saved to ~/Music/Radio/", crate::tui::app::ToastLevel::Success);
+                            }
+                        }
                     }
                     AppAction::StartRecord(p) => {
                         let st_name = app.current_station.as_ref().map(|s| s.name.as_str()).unwrap_or("Stream");
                         let track_str = app.track_metadata.display_name();
                         let _ = app.recorder.start_recording(st_name, Some(&track_str), p).await;
+                        app.show_toast("🔴 Recording started", crate::tui::app::ToastLevel::Warning);
                     }
                     AppAction::StopRecord => {
                         let _ = app.recorder.stop_recording().await;
+                        app.show_toast("■ Recording saved to ~/Music/Radio/", crate::tui::app::ToastLevel::Success);
                     }
                     AppAction::SetSleepTimer(dur) => {
                         app.sleep_timer_secs_remaining = dur.map(|d| d.as_secs());
@@ -169,22 +185,32 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         app.toggle_hardware_mute();
                     }
                     AppAction::BookmarkTrack => {
-                        let st_name = app.current_station.as_ref().map(|s| s.name.as_str()).unwrap_or("Reso");
-                        let artist = app.track_metadata.artist.as_deref().unwrap_or("Unknown Artist");
-                        let title = app.track_metadata.title.as_deref().unwrap_or(
-                            app.track_metadata.raw_title.as_deref().unwrap_or("Unknown Title"),
-                        );
-                        let album = app.track_metadata.album.as_deref();
-                        let codec = if app.stream_params.codec.is_empty() { None } else { Some(app.stream_params.codec.as_str()) };
+                        let st_name = app.current_station.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "Reso".to_string());
+                        let artist = app.track_metadata.artist.clone().unwrap_or_else(|| "Unknown Artist".to_string());
+                        let title = app.track_metadata.title.clone().unwrap_or_else(|| {
+                            app.track_metadata.raw_title.clone().unwrap_or_else(|| "Unknown Title".to_string())
+                        });
+                        let album = app.track_metadata.album.clone();
+                        let codec = if app.stream_params.codec.is_empty() { None } else { Some(app.stream_params.codec.clone()) };
                         let rate = if app.stream_params.sample_rate == 0 { None } else { Some(app.stream_params.sample_rate) };
                         let bit_depth = app.stream_params.bit_depth;
 
-                        let _ = app.config_manager.bookmark_track(st_name, artist, title, album, codec, rate, bit_depth);
-                        app.load_liked_history();
+                        match app.config_manager.bookmark_track(&st_name, &artist, &title, album.as_deref(), codec.as_deref(), rate, bit_depth) {
+                            Ok(_) => {
+                                app.load_liked_history();
+                                app.show_toast(format!("★ Liked: {} - {}", artist, title), crate::tui::app::ToastLevel::Success);
+                            }
+                            Err(e) => {
+                                app.show_toast(format!("✗ Like failed: {}", e), crate::tui::app::ToastLevel::Error);
+                            }
+                        }
                     }
                     AppAction::CopyTrackToClipboard => {
                         let title_str = app.track_metadata.display_name();
-                        let _ = copy_to_clipboard(&title_str);
+                        match copy_to_clipboard(&title_str) {
+                            Ok(_) => app.show_toast(format!("✓ Copied: {}", title_str), crate::tui::app::ToastLevel::Success),
+                            Err(e) => app.show_toast(format!("✗ Copy failed: {}", e), crate::tui::app::ToastLevel::Error),
+                        }
                     }
                     AppAction::Search(query) => {
                         if let Ok(res) = app.api_client.search_radio_browser(&query, Some("FLAC"), None, 30).await {
