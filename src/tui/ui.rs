@@ -65,7 +65,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(22), // Logo & App Name
+            Constraint::Length(12), // Logo & App Name (Icon + RESO)
             Constraint::Min(45),    // Navigation Tabs
             Constraint::Length(35), // Status & Bit-Perfect Badges
         ])
@@ -74,19 +74,20 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
     // 1. Logo
     let logo_text = vec![Line::from(vec![
         Span::styled(
-            "📻 RESO ",
+            "📻 RESO",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("v0.1.0", Style::default().fg(Color::DarkGray)),
     ])];
-    let logo_widget = Paragraph::new(logo_text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Cyan)),
-    );
+    let logo_widget = Paragraph::new(logo_text)
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
     f.render_widget(logo_widget, chunks[0]);
 
     // 2. Navigation Tabs
