@@ -3,12 +3,14 @@
 pub mod app;
 pub mod cover;
 pub mod spectrum;
+pub mod theme;
 pub mod ui;
 pub mod visualizer;
 
 pub use app::{ActiveTab, App};
 pub use cover::CoverArtManager;
 pub use spectrum::{AudioCapture, SpectrumAnalyzer};
+pub use theme::Theme;
 pub use visualizer::{VisualizerState, VisualizerWidget};
 
 use crate::config::ConfigManager;

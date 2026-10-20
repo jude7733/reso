@@ -63,9 +63,21 @@ pub struct UiConfig {
     #[serde(default = "default_cover_mode")]
     pub cover_mode: String,
 
-    /// TUI color theme ("audiophile_dark", "cyberpunk", "monochrome").
+    /// TUI color theme ("audiophile_dark", "cyberpunk", "monochrome", "wal").
     #[serde(default = "default_theme")]
     pub theme: String,
+
+    /// Optional explicit path to color scheme file (e.g. `~/.cache/wal/colors.json` or `~/.cache/wal/reso.toml`).
+    #[serde(default)]
+    pub theme_path: Option<String>,
+
+    /// Whether to watch the theme file and reload dynamically on wallpaper change.
+    #[serde(default = "default_true")]
+    pub theme_auto_reload: bool,
+
+    /// Interval in seconds for checking theme file modification timestamp. Default: 5 seconds.
+    #[serde(default = "default_theme_reload_interval")]
+    pub theme_reload_interval_secs: u64,
 
     /// Default station list sorting mode ("favorites", "default", "quality", "name_asc", "name_desc", "codec").
     #[serde(default = "default_sort_mode")]
@@ -84,6 +96,10 @@ fn default_theme() -> String {
     "audiophile_dark".to_string()
 }
 
+fn default_theme_reload_interval() -> u64 {
+    5
+}
+
 fn default_sort_mode() -> String {
     "favorites".to_string()
 }
@@ -94,6 +110,9 @@ impl Default for UiConfig {
             show_visualizer: true,
             cover_mode: default_cover_mode(),
             theme: default_theme(),
+            theme_path: None,
+            theme_auto_reload: true,
+            theme_reload_interval_secs: default_theme_reload_interval(),
             default_sort_mode: default_sort_mode(),
         }
     }

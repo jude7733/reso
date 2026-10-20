@@ -1,0 +1,61 @@
+# ==============================================================================
+# Pywal / Pywal-16 Template for Reso (Lossless Audiophile Internet Radio Player)
+#
+# Instructions:
+# 1. Copy or symlink this file to:
+#    mkdir -p ~/.config/wal/templates
+#    cp assets/wal/reso.toml ~/.config/wal/templates/reso.toml
+#
+# 2. When you run pywal (`wal -i /path/to/wallpaper.jpg`), it compiles to:
+#    ~/.cache/wal/reso.toml
+#
+# 3. In Reso (or in ~/.config/reso/config.toml), configure:
+#    [ui]
+#    theme = "wal"
+#    theme_path = "~/.cache/wal/reso.toml"  # (or leave empty to use native colors.json)
+#    theme_auto_reload = true               # Reloads within 5s of wallpaper switch
+#    theme_reload_interval_secs = 5
+# ==============================================================================
+
+[theme]
+name = "pywal16-dynamic"
+
+[palette]
+background = "{background}"
+foreground = "{foreground}"
+cursor     = "{cursor}"
+
+# Standard 16-color ANSI palette from pywal / pywal-16
+color0  = "{color0}"
+color1  = "{color1}"
+color2  = "{color2}"
+color3  = "{color3}"
+color4  = "{color4}"
+color5  = "{color5}"
+color6  = "{color6}"
+color7  = "{color7}"
+color8  = "{color8}"
+color9  = "{color9}"
+color10 = "{color10}"
+color11 = "{color11}"
+color12 = "{color12}"
+color13 = "{color13}"
+color14 = "{color14}"
+color15 = "{color15}"
+
+# Semantic UI color mappings for Reso
+[ui]
+primary         = "{color4}"      # Main accent: active borders, section titles, active tab
+secondary       = "{color6}"      # Secondary accent: station tags, stream URLs
+background      = "{background}"  # TUI background color (or terminal default if omitted)
+foreground      = "{foreground}"  # Default text color
+border          = "{color8}"      # Inactive widget borders & separators
+border_active   = "{color4}"      # Focused widget border
+selection_bg    = "{color4}"      # Selected list item background
+selection_fg    = "{color0}"      # Selected list item foreground text
+status_lossless = "{color2}"      # Bit-perfect / FLAC lossless badge (Green)
+status_warning  = "{color3}"      # Warnings / Favorite star icon (Yellow)
+status_danger   = "{color1}"      # Recording active / Stream error (Red)
+spectrum_low    = "{color2}"      # Spectrum visualizer bass frequency bars
+spectrum_mid    = "{color4}"      # Spectrum visualizer mid-range bars
+spectrum_high   = "{color6}"      # Spectrum visualizer treble bars

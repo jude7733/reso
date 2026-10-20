@@ -12,6 +12,7 @@ use crate::integration::scrobbler::ScrobbleTracker;
 use crate::mpv::client::MpvClient;
 use crate::mpv::record::StreamRecorder;
 use crate::tui::cover::CoverArtManager;
+use crate::tui::theme::Theme;
 use crate::tui::visualizer::VisualizerState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
@@ -343,6 +344,8 @@ pub struct App {
     pub toast: Option<ToastNotification>,
     pub track_started_at: Option<std::time::Instant>,
     pub settings_state: SettingsState,
+    pub theme: Theme,
+    pub theme_last_mtime: Option<std::time::SystemTime>,
 
     // Subsystems
     pub mpv_client: MpvClient,
@@ -373,6 +376,33 @@ impl App {
         let default_sort =
             StationSortMode::from_str_key(&config_manager.config.ui.default_sort_mode);
         let settings_state = SettingsState::from_config(&config_manager.config);
+
+        let theme = Theme::load(
+            &config_manager.config.ui.theme,
+            config_manager.config.ui.theme_path.as_deref(),
+        );
+        let theme_file_path = if config_manager.config.ui.theme == "wal" {
+            Some(
+                config_manager
+                    .config
+                    .ui
+                    .theme_path
+                    .as_deref()
+                    .map(crate::util::expand_home_dir)
+                    .unwrap_or_else(crate::util::default_wal_cache_path),
+            )
+        } else {
+            config_manager
+                .config
+                .ui
+                .theme_path
+                .as_deref()
+                .map(crate::util::expand_home_dir)
+        };
+        let theme_last_mtime = theme_file_path
+            .as_ref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok());
 
         let mut app = Self {
             active_tab: ActiveTab::Stations,
@@ -417,6 +447,8 @@ impl App {
             toast: None,
             track_started_at: None,
             settings_state,
+            theme,
+            theme_last_mtime,
             mpv_client,
             api_client,
             recorder,
@@ -427,6 +459,95 @@ impl App {
 
         app.refresh_hardware_volume();
         app
+    }
+
+    /// Reloads the active theme from disk or preset.
+    pub fn reload_theme(&mut self) {
+        let is_wal = self.config_manager.config.ui.theme == "wal";
+        let resolved_path = if is_wal {
+            Some(
+                self.config_manager
+                    .config
+                    .ui
+                    .theme_path
+                    .as_deref()
+                    .map(crate::util::expand_home_dir)
+                    .unwrap_or_else(crate::util::default_wal_cache_path),
+            )
+        } else {
+            self.config_manager
+                .config
+                .ui
+                .theme_path
+                .as_deref()
+                .map(crate::util::expand_home_dir)
+        };
+
+        if let Some(ref path) = resolved_path {
+            if let Ok(meta) = std::fs::metadata(path) {
+                self.theme_last_mtime = meta.modified().ok();
+            }
+        }
+
+        self.theme = Theme::load(
+            &self.config_manager.config.ui.theme,
+            self.config_manager.config.ui.theme_path.as_deref(),
+        );
+    }
+
+    /// Checks if the theme file on disk has been updated (e.g. wallpaper changed via pywal).
+    pub fn check_theme_file_update(&mut self) {
+        if !self.config_manager.config.ui.theme_auto_reload {
+            return;
+        }
+
+        let is_wal = self.config_manager.config.ui.theme == "wal";
+        let has_custom = self.config_manager.config.ui.theme_path.is_some();
+        if !is_wal && !has_custom {
+            return;
+        }
+
+        let resolved_path = if is_wal {
+            Some(
+                self.config_manager
+                    .config
+                    .ui
+                    .theme_path
+                    .as_deref()
+                    .map(crate::util::expand_home_dir)
+                    .unwrap_or_else(crate::util::default_wal_cache_path),
+            )
+        } else {
+            self.config_manager
+                .config
+                .ui
+                .theme_path
+                .as_deref()
+                .map(crate::util::expand_home_dir)
+        };
+
+        if let Some(path) = resolved_path {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if let Ok(mtime) = meta.modified() {
+                    if let Some(last) = self.theme_last_mtime {
+                        if mtime > last {
+                            self.theme_last_mtime = Some(mtime);
+                            let theme_name = self.config_manager.config.ui.theme.clone();
+                            self.theme = Theme::load(
+                                &theme_name,
+                                self.config_manager.config.ui.theme_path.as_deref(),
+                            );
+                            self.show_toast(
+                                format!("🎨 Wallpaper theme reloaded: {}", self.theme.name),
+                                ToastLevel::Info,
+                            );
+                        }
+                    } else {
+                        self.theme_last_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
     }
 
     /// Shows a transient toast notification in the UI.
@@ -466,8 +587,9 @@ impl App {
 
     /// Saves pending settings form to config.toml and applies them immediately.
     pub fn save_settings(&mut self) -> Result<()> {
-        let s = &self.settings_state;
+        let s = self.settings_state.clone();
         self.config_manager.config.ui.theme = s.theme.clone();
+        self.reload_theme();
         self.config_manager.config.ui.show_visualizer = s.show_visualizer;
         self.config_manager.config.ui.default_sort_mode = s.default_sort_mode.clone();
         self.config_manager.config.ui.cover_mode = s.cover_mode.clone();
@@ -1769,8 +1891,12 @@ impl App {
                         self.settings_state.theme = match self.settings_state.theme.as_str() {
                             "audiophile_dark" => "cyberpunk".to_string(),
                             "cyberpunk" => "monochrome".to_string(),
+                            "monochrome" => "wal".to_string(),
                             _ => "audiophile_dark".to_string(),
                         };
+                        self.config_manager.config.ui.theme = self.settings_state.theme.clone();
+                        self.reload_theme();
+                        let _ = self.config_manager.save_config();
                         self.show_toast(
                             format!("Theme switched to: {}", self.settings_state.theme),
                             ToastLevel::Info,
@@ -2053,6 +2179,13 @@ impl App {
 
         // Check scrobble threshold
         self.scrobbler.tick().await;
+
+        // Dynamic theme updates: default every 5 seconds (configurable via ui.theme_reload_interval_secs)
+        let theme_interval_ticks =
+            (self.config_manager.config.ui.theme_reload_interval_secs.max(1)) * 20;
+        if self.tick_count % theme_interval_ticks == 0 {
+            self.check_theme_file_update();
+        }
 
         // Decrement sleep timer every second (every 20 ticks of 50ms)
         if self.tick_count % 20 == 0 {

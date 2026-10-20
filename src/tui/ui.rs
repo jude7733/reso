@@ -21,6 +21,11 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
+    // Fill background if specified by the active theme
+    if let Some(bg) = app.theme.background {
+        f.render_widget(Block::default().style(Style::default().bg(bg)), area);
+    }
+
     let viz_height = if app.config_manager.config.ui.show_visualizer {
         4
     } else {
@@ -75,7 +80,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     let logo_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(app.theme.primary));
     let inner_logo = logo_block.inner(chunks[0]);
     f.render_widget(logo_block, chunks[0]);
 
@@ -102,7 +107,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         let logo_text = Paragraph::new(Span::styled(
             "RESO",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(app.theme.primary)
                 .add_modifier(Modifier::BOLD),
         ));
         f.render_widget(logo_text, text_rect);
@@ -122,11 +127,11 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             let is_active = app.active_tab == *tab;
             let style = if is_active {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
+                    .fg(app.theme.selection_fg)
+                    .bg(app.theme.primary)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(app.theme.foreground)
             };
             vec![Span::styled(format!(" {} ", name), style), Span::raw(" ")]
         })
@@ -137,7 +142,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(" Views ")
-            .border_style(Style::default().fg(Color::DarkGray)),
+            .border_style(Style::default().fg(app.theme.border)),
     );
     f.render_widget(tabs_widget, chunks[1]);
 
@@ -149,7 +154,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         badge_spans.push(Span::styled(
             format!(" ⏳{} ", format_duration(secs)),
             Style::default()
-                .fg(Color::Yellow)
+                .fg(app.theme.status_warning)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -157,7 +162,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     // Recording Badge
     if app.is_recording {
         let pulse = if (app.tick_count / 5) % 2 == 0 {
-            Color::Red
+            app.theme.status_danger
         } else {
             Color::LightRed
         };
@@ -181,7 +186,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Color::Rgb(0, 160, 70)
             };
-            badge_border_color = Color::Green;
+            badge_border_color = app.theme.status_lossless;
             badge_spans.push(Span::styled(
                 format!(" ✓ BIT-PERFECT: {} ", rate_str),
                 Style::default()
@@ -195,7 +200,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             sink_rate,
             ..
         }) => {
-            badge_border_color = Color::Yellow;
+            badge_border_color = app.theme.status_warning;
             badge_spans.push(Span::styled(
                 format!(
                     " ⚠ RESAMPLED: {}→{} ",
@@ -204,32 +209,32 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
                 ),
                 Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .bg(app.theme.status_warning)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::VolumeDegraded { .. }) => {
-            badge_border_color = Color::Yellow;
+            badge_border_color = app.theme.status_warning;
             badge_spans.push(Span::styled(
                 " ⚠ VOL < 100% ",
                 Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .bg(app.theme.status_warning)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         Some(BitPerfectVerdict::DspFilterActive { .. }) => {
-            badge_border_color = Color::Red;
+            badge_border_color = app.theme.status_danger;
             badge_spans.push(Span::styled(
                 " ⚠ DSP ACTIVE ",
                 Style::default()
                     .fg(Color::White)
-                    .bg(Color::Red)
+                    .bg(app.theme.status_danger)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         _ => {
-            badge_border_color = Color::DarkGray;
+            badge_border_color = app.theme.border;
             badge_spans.push(Span::styled(
                 " ■ STANDBY ",
                 Style::default().fg(Color::Gray).bg(Color::Rgb(40, 40, 40)),
@@ -329,15 +334,15 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
 
             let base_style = if is_selected {
                 Style::default()
-                    .fg(Color::White)
-                    .bg(Color::Rgb(30, 45, 60))
+                    .fg(app.theme.selection_fg)
+                    .bg(app.theme.selection_bg)
                     .add_modifier(Modifier::BOLD)
             } else if is_playing {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.primary)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(app.theme.foreground)
             };
 
             // Calculate name width to never collide with rate badge
@@ -355,19 +360,19 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(
                     play_icon,
                     if is_playing {
-                        Style::default().fg(Color::Green)
+                        Style::default().fg(app.theme.status_lossless)
                     } else {
                         base_style
                     },
                 ),
-                Span::styled(fav_icon, Style::default().fg(Color::Yellow)),
+                Span::styled(fav_icon, Style::default().fg(app.theme.status_warning)),
                 Span::styled(padded_name, base_style),
                 Span::styled(
                     rate_badge,
                     if is_selected {
-                        Style::default().fg(Color::Rgb(140, 200, 255))
+                        Style::default().fg(app.theme.secondary)
                     } else {
-                        Style::default().fg(Color::DarkGray)
+                        Style::default().fg(app.theme.text_dim)
                     },
                 ),
             ]);
@@ -377,9 +382,9 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let border_color = if is_focused {
-        Color::Cyan
+        app.theme.border_active
     } else {
-        Color::DarkGray
+        app.theme.border
     };
     let title = if !app.filter_query.is_empty() {
         format!(
@@ -407,8 +412,8 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_style(
             Style::default()
-                .fg(Color::White)
-                .bg(Color::Rgb(30, 45, 60))
+                .fg(app.theme.selection_fg)
+                .bg(app.theme.selection_bg)
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -433,11 +438,11 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         let mut tag_spans = vec![Span::styled(
             "🏷 Tags: ",
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(app.theme.text_dim)
                 .add_modifier(Modifier::BOLD),
         )];
         if st.tags.is_empty() {
-            tag_spans.push(Span::styled("none", Style::default().fg(Color::DarkGray)));
+            tag_spans.push(Span::styled("none", Style::default().fg(app.theme.text_dim)));
         } else {
             for (ti, tag) in st.tags.iter().enumerate() {
                 if ti > 0 {
@@ -445,7 +450,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 tag_spans.push(Span::styled(
                     format!("[{}]", tag),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(app.theme.secondary),
                 ));
             }
         }
@@ -453,20 +458,20 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         let max_url_len = chunks[1].width.saturating_sub(8) as usize;
         let url_truncated = crate::util::truncate_str(&st.url, max_url_len);
         let url_line = vec![
-            Span::styled("🔗 URL:  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("🔗 URL:  ", Style::default().fg(app.theme.text_dim)),
             Span::styled(
                 url_truncated,
-                Style::default().fg(Color::Rgb(160, 180, 200)),
+                Style::default().fg(app.theme.foreground),
             ),
         ];
 
         vec![Line::from(tag_spans), Line::from(url_line)]
     } else {
         vec![
-            Line::styled(" No station selected", Style::default().fg(Color::DarkGray)),
+            Line::styled(" No station selected", Style::default().fg(app.theme.text_dim)),
             Line::styled(
                 " Press [a] to add a radio endpoint",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(app.theme.text_dim),
             ),
         ]
     };
@@ -476,7 +481,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(" Station Tags & Stream Endpoint ")
-            .border_style(Style::default().fg(Color::DarkGray)),
+            .border_style(Style::default().fg(app.theme.border)),
     );
     f.render_widget(tags_card, chunks[1]);
 }
@@ -502,9 +507,9 @@ fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
     let is_playing = app.playback_state == PlaybackState::Playing;
     let card_border_color = if is_playing {
-        Color::Cyan
+        app.theme.border_active
     } else {
-        Color::DarkGray
+        app.theme.border
     };
 
     let main_block = Block::default()
@@ -526,21 +531,21 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
             " ▶ PLAYING ",
             Style::default()
                 .fg(Color::White)
-                .bg(Color::Rgb(0, 160, 80))
+                .bg(app.theme.status_lossless)
                 .add_modifier(Modifier::BOLD),
         ),
         PlaybackState::Paused => Span::styled(
             " ⏸ PAUSED ",
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Rgb(240, 180, 40))
+                .bg(app.theme.status_warning)
                 .add_modifier(Modifier::BOLD),
         ),
         _ => Span::styled(
             " ■ STOPPED ",
             Style::default()
                 .fg(Color::White)
-                .bg(Color::DarkGray)
+                .bg(app.theme.border)
                 .add_modifier(Modifier::BOLD),
         ),
     };
@@ -554,7 +559,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         Some(Span::styled(
             " ★ FAVORITE ",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(app.theme.status_warning)
                 .add_modifier(Modifier::BOLD),
         ))
     } else {
@@ -566,7 +571,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
             " [● REC] ",
             Style::default()
                 .fg(Color::White)
-                .bg(Color::Red)
+                .bg(app.theme.status_danger)
                 .add_modifier(Modifier::BOLD),
         ))
     } else {
@@ -580,7 +585,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
             format!(" ⏳ {:02}:{:02} ", mins, secs),
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Rgb(240, 180, 50))
+                .bg(app.theme.status_warning)
                 .add_modifier(Modifier::BOLD),
         )
     });
@@ -593,7 +598,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
             Some(Span::styled(
                 format!(" ⏱ {:02}:{:02} ", mins, secs),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.primary)
                     .bg(Color::Rgb(20, 35, 50))
                     .add_modifier(Modifier::BOLD),
             ))
@@ -1023,8 +1028,8 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
 fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
     let viz_widget = VisualizerWidget {
         state: &app.visualizer_state,
-        primary_color: Color::Cyan,
-        highlight_color: Color::Rgb(140, 200, 255),
+        primary_color: app.theme.primary,
+        highlight_color: app.theme.secondary,
     };
     f.render_widget(viz_widget, area);
 }
@@ -2377,11 +2382,16 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let sel0 = s.selected_field == 0;
             let cursor0 = if sel0 { "▶ " } else { "  " };
             let style0 = if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let hint = if s.theme == "wal" {
+                " (Dynamic wallpaper palette from ~/.cache/wal)"
+            } else {
+                " (Space to cycle: audiophile_dark, cyberpunk, monochrome, wal)"
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor0, Style::default().fg(Color::Cyan)),
                 Span::styled("Color Theme:                ", style0),
                 Span::styled(format!("[ < {} > ]", s.theme), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" (Space to cycle: audiophile_dark, cyberpunk, monochrome)", Style::default().fg(Color::DarkGray)),
+                Span::styled(hint, Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 

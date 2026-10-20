@@ -34,6 +34,26 @@ pub fn default_socket_path() -> PathBuf {
     }
 }
 
+/// Expands a leading `~` or `~/` to the current user's home directory.
+pub fn expand_home_dir(path: &str) -> PathBuf {
+    if path == "~" {
+        return UserDirs::new()
+            .map(|u| u.home_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(user_dirs) = UserDirs::new() {
+            return user_dirs.home_dir().join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+/// Returns the default pywal colors path (`~/.cache/wal/colors.json`).
+pub fn default_wal_cache_path() -> PathBuf {
+    expand_home_dir("~/.cache/wal/colors.json")
+}
+
 /// Formats a sample rate in Hertz to a human-readable string (e.g., `44.1 kHz`, `96.0 kHz`).
 pub fn format_sample_rate(hz: u32) -> String {
     if hz == 0 {

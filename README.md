@@ -298,6 +298,47 @@ All user configuration, catalogs, and logs reside in standard XDG paths:
 
 ---
 
+## Pywal-16 Dynamic Theming Integration
+
+Reso supports dynamic wallpaper color theming via [pywal](https://github.com/dylanaraps/pywal) and [pywal16](https://github.com/eylles/pywal16) with in-memory live reloading (no audio playback interruption!).
+
+### Option A: Zero-Config Mode (Direct `colors.json`)
+
+Set `theme = "wal"` in `~/.config/reso/config.toml`:
+
+```toml
+[ui]
+theme = "wal"                  # Reads ~/.cache/wal/colors.json directly
+theme_auto_reload = true       # Automatically checks for wallpaper updates
+theme_reload_interval_secs = 5 # Check interval (default: 5 seconds)
+```
+
+Whenever you run `wal -i <image>`, Reso will automatically detect the updated palette within 5 seconds and hot-reload the UI.
+
+### Option B: Custom Pywal Template
+
+For granular control over semantic UI roles:
+
+1. Copy the template from `assets/wal/reso.toml`:
+   ```bash
+   mkdir -p ~/.config/wal/templates
+   cp assets/wal/reso.toml ~/.config/wal/templates/reso.toml
+   ```
+2. Generate your palette:
+   ```bash
+   wal -i /path/to/wallpaper.jpg
+   ```
+3. Point Reso to the generated template output in `~/.config/reso/config.toml`:
+   ```toml
+   [ui]
+   theme = "wal"
+   theme_path = "~/.cache/wal/reso.toml"
+   theme_auto_reload = true
+   theme_reload_interval_secs = 5
+   ```
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
