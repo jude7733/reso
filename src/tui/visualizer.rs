@@ -162,6 +162,20 @@ pub struct VisualizerWidget<'a> {
     pub state: &'a VisualizerState,
     pub primary_color: Color,
     pub highlight_color: Color,
+    pub low_color: Option<Color>,
+    pub peak_color: Option<Color>,
+}
+
+impl<'a> VisualizerWidget<'a> {
+    pub fn new(state: &'a VisualizerState, primary_color: Color, highlight_color: Color) -> Self {
+        Self {
+            state,
+            primary_color,
+            highlight_color,
+            low_color: None,
+            peak_color: None,
+        }
+    }
 }
 
 impl Widget for VisualizerWidget<'_> {
@@ -177,6 +191,21 @@ impl Widget for VisualizerWidget<'_> {
         if num_bands == 0 {
             return;
         }
+
+        let low_c = self.low_color.unwrap_or_else(|| {
+            if self.primary_color == Color::Cyan {
+                Color::Rgb(0, 150, 195)
+            } else {
+                self.primary_color
+            }
+        });
+        let peak_c = self.peak_color.unwrap_or_else(|| {
+            if self.primary_color == Color::Cyan {
+                Color::Rgb(255, 195, 75)
+            } else {
+                self.highlight_color
+            }
+        });
 
         for x in 0..num_bars {
             // Smooth cosine curve interpolation across terminal width
@@ -211,7 +240,7 @@ impl Widget for VisualizerWidget<'_> {
             for y in 0..area.height {
                 let cell_y = area.bottom().saturating_sub(1 + y);
 
-                // Multi-tier Audiophile Studio Gradient based on vertical elevation
+                // Multi-tier gradient based on vertical elevation
                 let norm_y = if area.height > 1 {
                     y as f32 / (area.height - 1) as f32
                 } else {
@@ -219,13 +248,13 @@ impl Widget for VisualizerWidget<'_> {
                 };
 
                 let cell_color = if norm_y > 0.85 {
-                    Color::Rgb(255, 195, 75) // Amber peak glow
+                    peak_c // Amber peak glow / high tier
                 } else if norm_y > 0.60 {
-                    Color::Rgb(140, 215, 255) // Electric Cyan / Ice Blue
+                    self.highlight_color // Upper bar tier (ice blue / secondary accent)
                 } else if norm_y > 0.30 {
-                    Color::Rgb(72, 190, 230) // Vibrant Sky Blue
+                    self.primary_color // Mid bar tier (primary accent)
                 } else {
-                    Color::Rgb(0, 150, 195) // Deep Ocean Teal
+                    low_c // Deep bottom tier
                 };
 
                 if y < full_cells {
@@ -246,9 +275,16 @@ impl Widget for VisualizerWidget<'_> {
             let peak_y = (peak_amp * max_height).floor() as u16;
             if peak_y > full_cells && peak_y < area.height && peak_amp > 0.06 {
                 let cell_y = area.bottom().saturating_sub(1 + peak_y);
+                let cap_color = self.peak_color.unwrap_or_else(|| {
+                    if self.primary_color == Color::Cyan {
+                        Color::Rgb(255, 230, 140)
+                    } else {
+                        self.highlight_color
+                    }
+                });
                 buf[(col, cell_y)]
                     .set_char('▔')
-                    .set_style(Style::default().fg(Color::Rgb(255, 230, 140)));
+                    .set_style(Style::default().fg(cap_color));
             }
         }
     }

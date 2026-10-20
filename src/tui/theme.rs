@@ -61,9 +61,9 @@ impl Theme {
             status_lossless: Color::Rgb(0, 180, 80),
             status_warning: Color::Yellow,
             status_danger: Color::Red,
-            spectrum_low: Color::Rgb(0, 220, 120),
+            spectrum_low: Color::Rgb(0, 150, 195),   // Deep ocean teal
             spectrum_mid: Color::Cyan,
-            spectrum_high: Color::Rgb(160, 100, 255),
+            spectrum_high: Color::Rgb(255, 195, 75), // Amber peak glow
         }
     }
 
@@ -243,7 +243,7 @@ impl Theme {
             name: "wal".to_string(),
             primary,
             secondary,
-            background: bg_color,
+            background: None, // Preserves terminal transparency
             foreground: fg_color,
             text_dim: border,
             border,
@@ -507,7 +507,7 @@ mod tests {
 
         let theme = Theme::from_wal_json_str(json_data).expect("Should parse wal json");
         assert_eq!(theme.name, "wal");
-        assert_eq!(theme.background, Some(Color::Rgb(0x12, 0x12, 0x12)));
+        assert_eq!(theme.background, None);
         assert_eq!(theme.foreground, Color::Rgb(0xe0, 0xe0, 0xe0));
         assert_eq!(theme.primary, Color::Rgb(0xbd, 0x93, 0xf9));
         assert_eq!(theme.status_lossless, Color::Rgb(0x50, 0xfa, 0x7b));

@@ -21,11 +21,6 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
-    // Fill background if specified by the active theme
-    if let Some(bg) = app.theme.background {
-        f.render_widget(Block::default().style(Style::default().bg(bg)), area);
-    }
-
     let viz_height = if app.config_manager.config.ui.show_visualizer {
         4
     } else {
@@ -1030,6 +1025,8 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
         state: &app.visualizer_state,
         primary_color: app.theme.primary,
         highlight_color: app.theme.secondary,
+        low_color: Some(app.theme.spectrum_low),
+        peak_color: Some(app.theme.spectrum_high),
     };
     f.render_widget(viz_widget, area);
 }

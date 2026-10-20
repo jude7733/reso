@@ -47,7 +47,7 @@ color15 = "{color15}"
 [ui]
 primary         = "{color4}"      # Main accent: active borders, section titles, active tab
 secondary       = "{color6}"      # Secondary accent: station tags, stream URLs
-background      = "{background}"  # TUI background color (or terminal default if omitted)
+# background    = "{background}"  # Leave commented out to preserve terminal transparency!
 foreground      = "{foreground}"  # Default text color
 border          = "{color8}"      # Inactive widget borders & separators
 border_active   = "{color4}"      # Focused widget border
