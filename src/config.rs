@@ -458,7 +458,11 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Loads configuration, stations playlist, and liked tracks from `~/.config/reso/` or creates defaults.
     pub fn load_or_init() -> Result<Self> {
-        let dir = config_dir();
+        Self::load_from_dir(config_dir())
+    }
+
+    /// Loads configuration, stations playlist, and liked tracks from a specific directory.
+    pub fn load_from_dir(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir)?;
 
         // 1. App Configuration (`config.toml`)

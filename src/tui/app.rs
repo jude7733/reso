@@ -806,7 +806,7 @@ impl App {
         } else {
             &self.cached_filtered_indices
         };
-        indices.get(filtered_idx).map(|&i| &self.catalog.stations[i])
+        indices.get(filtered_idx).and_then(|&i| self.catalog.stations.get(i))
     }
 
     /// Internal: recomputes filtered + sorted station indices from catalog.
@@ -1413,11 +1413,26 @@ impl App {
                 _ => {}
             },
 
-            ModalState::ConfirmDeleteStation { station_id, .. } => match key.code {
+            ModalState::ConfirmDeleteStation {
+                station_id,
+                station_name,
+            } => match key.code {
                 KeyCode::Char('y') | KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('x') => {
                     let id = station_id.clone();
+                    let name = station_name.clone();
                     let _ = self.config_manager.remove_station(&id);
                     self.catalog = self.config_manager.catalog.clone();
+                    self.invalidate_station_cache();
+                    let count = self.filtered_station_count();
+                    if count == 0 {
+                        self.station_list_index = 0;
+                    } else if self.station_list_index >= count {
+                        self.station_list_index = count - 1;
+                    }
+                    self.show_toast(
+                        format!("Removed \"{}\" from catalog", name),
+                        ToastLevel::Info,
+                    );
                     self.modal_state = ModalState::None;
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Char('c') => {
@@ -1431,6 +1446,13 @@ impl App {
                     let id = track_id.clone();
                     let _ = self.config_manager.remove_liked_track(&id);
                     self.load_liked_history();
+                    let len = self.liked_tracks.len();
+                    if len == 0 {
+                        self.liked_list_index = 0;
+                    } else if self.liked_list_index >= len {
+                        self.liked_list_index = len - 1;
+                    }
+                    self.show_toast("✓ Liked track deleted", ToastLevel::Info);
                     self.modal_state = ModalState::None;
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Char('c') => {
@@ -1565,6 +1587,7 @@ impl App {
 
                         let _ = self.config_manager.add_station(new_station.clone());
                         self.catalog = self.config_manager.catalog.clone();
+                        self.invalidate_station_cache();
                         self.current_station = Some(new_station);
                         self.modal_state = ModalState::None;
                     }
@@ -1652,6 +1675,7 @@ impl App {
                         };
                         let _ = self.config_manager.add_station(new_station.clone());
                         self.catalog = self.config_manager.catalog.clone();
+                        self.invalidate_station_cache();
                         self.current_station = Some(new_station);
                         self.modal_state = ModalState::None;
                     }
@@ -1735,8 +1759,9 @@ impl App {
                         .filter(|t| !t.is_empty())
                         .collect();
 
+                    let orig_id = state.original_id.clone();
                     let updated = Station {
-                        id: state.original_id.clone(),
+                        id: orig_id.clone(),
                         name,
                         url,
                         codec,
@@ -1750,10 +1775,11 @@ impl App {
 
                     let _ = self
                         .config_manager
-                        .edit_station(&state.original_id, updated.clone());
+                        .edit_station(&orig_id, updated.clone());
                     self.catalog = self.config_manager.catalog.clone();
+                    self.invalidate_station_cache();
                     if let Some(ref cur) = self.current_station {
-                        if cur.id == state.original_id {
+                        if cur.id == orig_id {
                             self.current_station = Some(updated);
                         }
                     }

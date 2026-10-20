@@ -304,8 +304,8 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = filtered_indices
         .iter()
         .enumerate()
-        .map(|(idx, &station_idx)| {
-            let station = &app.catalog.stations[station_idx];
+        .filter_map(|(idx, &station_idx)| {
+            let station = app.catalog.stations.get(station_idx)?;
             let is_selected = idx == app.station_list_index;
             let is_playing = app.current_station.as_ref().map(|s| &s.id) == Some(&station.id);
 
@@ -372,7 +372,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 ),
             ]);
 
-            ListItem::new(content)
+            Some(ListItem::new(content))
         })
         .collect();
 

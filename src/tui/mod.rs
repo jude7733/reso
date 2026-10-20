@@ -244,6 +244,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::UpdateStation(st) => {
                         let _ = app.config_manager.add_station(st);
                         app.catalog = app.config_manager.catalog.clone();
+                        app.invalidate_station_cache();
                     }
                     AppAction::DiagnosticsReady(status) => {
                         app.pipeline_status = *status;
