@@ -10,4 +10,4 @@ pub use api::ApiClient;
 pub use clipboard::copy_to_clipboard;
 pub use mpris::{start_mpris_server, MprisState};
 pub use prober::{StreamProbeResult, StreamProber};
-pub use scrobbler::ScrobbleTracker;
+pub use scrobbler::{fetch_lastfm_session, request_lastfm_token, ScrobbleTracker};

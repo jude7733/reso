@@ -2492,46 +2492,64 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             ]));
             form_lines.push(Line::raw(""));
 
-            // Field 1: Last.fm Username
+            // Field 1: Last.fm API Key
             let sel1 = s.selected_field == 1;
-            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_username.is_empty() { "(not set)".to_string() } else { s.lastfm_username.clone() } };
+            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_key.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
             form_lines.push(Line::from(vec![
                 Span::styled(if sel1 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm Username:           ", if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled("Last.fm API Key:            ", if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
                 Span::styled(val1, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
-            // Field 2: Last.fm API Key
+            // Field 2: Last.fm Shared Secret
             let sel2 = s.selected_field == 2;
-            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_key.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_secret.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
             form_lines.push(Line::from(vec![
                 Span::styled(if sel2 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm API Key:            ", if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled("Last.fm Shared Secret:      ", if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
                 Span::styled(val2, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
-            // Field 3: ListenBrainz Enabled
+            // Field 3: Last.fm Authorization Status
             let sel3 = s.selected_field == 3;
-            let (b_check, b_col) = if s.listenbrainz_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let (auth_badge, auth_color, auth_hint) = if !s.lastfm_session_key.is_empty() {
+                let user_disp = if s.lastfm_username.is_empty() { "Authorized".to_string() } else { format!("@{}", s.lastfm_username) };
+                (format!("[✓ Linked as {}]", user_disp), Color::Green, " (Enter to re-authenticate)")
+            } else if s.lastfm_pending_token.is_some() {
+                ("[⏳ Pending Browser Approval...]".to_string(), Color::Yellow, " (Enter to finish linking)")
+            } else {
+                ("[✗ Not Linked]".to_string(), Color::Red, " (Enter to Authorize in Browser)")
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(if sel3 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("ListenBrainz Scrobbling:    ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled("Last.fm Authorization:      ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(auth_badge, Style::default().fg(auth_color).add_modifier(Modifier::BOLD)),
+                Span::styled(auth_hint, Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+
+            // Field 4: ListenBrainz Enabled
+            let sel4 = s.selected_field == 4;
+            let (b_check, b_col) = if s.listenbrainz_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("ListenBrainz Scrobbling:    ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
                 Span::styled(b_check, Style::default().fg(b_col).add_modifier(Modifier::BOLD)),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
-            // Field 4: ListenBrainz User Token
-            let sel4 = s.selected_field == 4;
-            let val4 = if sel4 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.listenbrainz_token.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            // Field 5: ListenBrainz User Token
+            let sel5 = s.selected_field == 5;
+            let val5 = if sel5 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.listenbrainz_token.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("ListenBrainz User Token:    ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(val4, Style::default().fg(Color::Cyan)),
+                Span::styled(if sel5 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("ListenBrainz User Token:    ", if sel5 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(val5, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
         }

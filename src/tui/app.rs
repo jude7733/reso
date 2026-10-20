@@ -72,6 +72,9 @@ pub struct SettingsState {
     pub lastfm_enabled: bool,
     pub lastfm_username: String,
     pub lastfm_api_key: String,
+    pub lastfm_api_secret: String,
+    pub lastfm_session_key: String,
+    pub lastfm_pending_token: Option<String>,
     pub listenbrainz_enabled: bool,
     pub listenbrainz_token: String,
 }
@@ -99,6 +102,9 @@ impl SettingsState {
             lastfm_enabled: config.lastfm.enabled,
             lastfm_username: config.lastfm.username.clone().unwrap_or_default(),
             lastfm_api_key: config.lastfm.api_key.clone().unwrap_or_default(),
+            lastfm_api_secret: config.lastfm.api_secret.clone().unwrap_or_default(),
+            lastfm_session_key: config.lastfm.session_key.clone().unwrap_or_default(),
+            lastfm_pending_token: None,
             listenbrainz_enabled: config.listenbrainz.enabled,
             listenbrainz_token: config.listenbrainz.user_token.clone().unwrap_or_default(),
         }
@@ -108,7 +114,7 @@ impl SettingsState {
         match self.selected_section {
             0 => 4, // Theme, Visualizer, Sort Mode, Cover Mode
             1 => 3, // Default Station, Record Dir, Socket Path
-            2 => 5, // LastFM Enabled, LastFM User, LastFM Key, LB Enabled, LB Token
+            2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
             3 => 1, // Save Settings Button
             _ => 1,
         }
@@ -614,6 +620,16 @@ impl App {
         } else {
             Some(s.lastfm_api_key.trim().to_string())
         };
+        self.config_manager.config.lastfm.api_secret = if s.lastfm_api_secret.trim().is_empty() {
+            None
+        } else {
+            Some(s.lastfm_api_secret.trim().to_string())
+        };
+        self.config_manager.config.lastfm.session_key = if s.lastfm_session_key.trim().is_empty() {
+            None
+        } else {
+            Some(s.lastfm_session_key.trim().to_string())
+        };
 
         self.config_manager.config.listenbrainz.enabled = s.listenbrainz_enabled;
         self.config_manager.config.listenbrainz.user_token =
@@ -622,6 +638,12 @@ impl App {
             } else {
                 Some(s.listenbrainz_token.trim().to_string())
             };
+
+        // Reload live scrobbler tracker with updated credentials
+        self.scrobbler = ScrobbleTracker::new(
+            self.config_manager.config.lastfm.clone(),
+            self.config_manager.config.listenbrainz.clone(),
+        );
 
         self.visualizer_state.show_visualizer = s.show_visualizer;
         self.station_sort_mode = StationSortMode::from_str_key(&s.default_sort_mode);
@@ -1813,9 +1835,9 @@ impl App {
                         (1, 0) => self.settings_state.default_station_id = val,
                         (1, 1) => self.settings_state.record_dir = val,
                         (1, 2) => self.settings_state.socket_path = val,
-                        (2, 1) => self.settings_state.lastfm_username = val,
-                        (2, 2) => self.settings_state.lastfm_api_key = val,
-                        (2, 4) => self.settings_state.listenbrainz_token = val,
+                        (2, 1) => self.settings_state.lastfm_api_key = val,
+                        (2, 2) => self.settings_state.lastfm_api_secret = val,
+                        (2, 5) => self.settings_state.listenbrainz_token = val,
                         _ => {}
                     }
                     self.show_toast("Field updated (press Ctrl+S to save)", ToastLevel::Info);
@@ -1973,15 +1995,88 @@ impl App {
                     }
                     1 => {
                         self.settings_state.text_buffer =
-                            self.settings_state.lastfm_username.clone();
+                            self.settings_state.lastfm_api_key.clone();
                         self.settings_state.is_editing_text = true;
                     }
                     2 => {
                         self.settings_state.text_buffer =
-                            self.settings_state.lastfm_api_key.clone();
+                            self.settings_state.lastfm_api_secret.clone();
                         self.settings_state.is_editing_text = true;
                     }
                     3 => {
+                        // Field 3: Last.fm Authorization Flow
+                        let api_key = self.settings_state.lastfm_api_key.trim().to_string();
+                        let secret = self.settings_state.lastfm_api_secret.trim().to_string();
+
+                        if api_key.is_empty() || secret.is_empty() {
+                            self.show_toast(
+                                "Please configure Last.fm API Key and Shared Secret first",
+                                ToastLevel::Warning,
+                            );
+                        } else if let Some(token) = self.settings_state.lastfm_pending_token.clone() {
+                            // Try to exchange the pending token for session key
+                            match crate::integration::scrobbler::fetch_lastfm_session(&api_key, &secret, &token).await {
+                                Ok((username, sk)) => {
+                                    self.settings_state.lastfm_username = username.clone();
+                                    self.settings_state.lastfm_session_key = sk.clone();
+                                    self.settings_state.lastfm_pending_token = None;
+                                    self.config_manager.config.lastfm.username = Some(username.clone());
+                                    self.config_manager.config.lastfm.session_key = Some(sk);
+                                    self.config_manager.config.lastfm.api_key = Some(api_key);
+                                    self.config_manager.config.lastfm.api_secret = Some(secret);
+                                    let _ = self.config_manager.save_config();
+                                    self.scrobbler = ScrobbleTracker::new(
+                                        self.config_manager.config.lastfm.clone(),
+                                        self.config_manager.config.listenbrainz.clone(),
+                                    );
+                                    self.show_toast(
+                                        format!("✓ Last.fm linked as @{}!", username),
+                                        ToastLevel::Success,
+                                    );
+                                }
+                                Err(e) => {
+                                    let err_str = e.to_string();
+                                    if err_str.contains("Unauthorized") || err_str.contains("authorized") {
+                                        self.show_toast(
+                                            "Click 'Yes, allow access' in your browser, then press Enter here",
+                                            ToastLevel::Warning,
+                                        );
+                                    } else {
+                                        self.settings_state.lastfm_pending_token = None;
+                                        self.show_toast(
+                                            format!("Last.fm Auth Error: {}", err_str),
+                                            ToastLevel::Error,
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            // Request a new token and open the browser
+                            match crate::integration::scrobbler::request_lastfm_token(&api_key, &secret).await {
+                                Ok(token) => {
+                                    let auth_url = format!(
+                                        "https://www.last.fm/api/auth/?api_key={}&token={}",
+                                        api_key, token
+                                    );
+                                    let _ = std::process::Command::new("xdg-open")
+                                        .arg(&auth_url)
+                                        .spawn();
+                                    self.settings_state.lastfm_pending_token = Some(token);
+                                    self.show_toast(
+                                        "Browser opened! Allow access on Last.fm, then press Enter here",
+                                        ToastLevel::Info,
+                                    );
+                                }
+                                Err(e) => {
+                                    self.show_toast(
+                                        format!("Failed to request Last.fm token: {}", e),
+                                        ToastLevel::Error,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    4 => {
                         self.settings_state.listenbrainz_enabled =
                             !self.settings_state.listenbrainz_enabled;
                         let s = if self.settings_state.listenbrainz_enabled {
@@ -1991,7 +2086,7 @@ impl App {
                         };
                         self.show_toast(format!("ListenBrainz {}", s), ToastLevel::Info);
                     }
-                    4 => {
+                    5 => {
                         self.settings_state.text_buffer =
                             self.settings_state.listenbrainz_token.clone();
                         self.settings_state.is_editing_text = true;

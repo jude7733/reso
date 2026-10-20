@@ -183,7 +183,7 @@ impl ScrobbleTracker {
 }
 
 /// Calculates Last.fm MD5 API method signature.
-fn calculate_lastfm_signature(params: &BTreeMap<&str, &str>, secret: &str) -> String {
+pub fn calculate_lastfm_signature(params: &BTreeMap<&str, &str>, secret: &str) -> String {
     let mut sig_base = String::new();
     for (k, v) in params {
         if *k != "format" && *k != "api_sig" {
@@ -197,3 +197,87 @@ fn calculate_lastfm_signature(params: &BTreeMap<&str, &str>, secret: &str) -> St
     hasher.update(sig_base.as_bytes());
     format!("{:x}", hasher.finalize())
 }
+
+/// Requests a temporary unauthorized token from Last.fm to start web authentication.
+pub async fn request_lastfm_token(api_key: &str, secret: &str) -> Result<String> {
+    let mut params = BTreeMap::new();
+    params.insert("method", "auth.getToken");
+    params.insert("api_key", api_key);
+    let sig = calculate_lastfm_signature(&params, secret);
+    params.insert("api_sig", &sig);
+    params.insert("format", "json");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://ws.audioscrobbler.com/2.0/")
+        .query(&params)
+        .send()
+        .await
+        .map_err(|e| crate::error::ResoError::Scrobbler(e.to_string()))?;
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| crate::error::ResoError::Scrobbler(e.to_string()))?;
+
+    if let Some(token) = json.get("token").and_then(|t| t.as_str()) {
+        Ok(token.to_string())
+    } else {
+        let msg = json
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown Last.fm error");
+        Err(crate::error::ResoError::Scrobbler(msg.to_string()))
+    }
+}
+
+/// Exchanges an authorized Last.fm token for a permanent session key and username.
+pub async fn fetch_lastfm_session(
+    api_key: &str,
+    secret: &str,
+    token: &str,
+) -> Result<(String, String)> {
+    let mut params = BTreeMap::new();
+    params.insert("method", "auth.getSession");
+    params.insert("api_key", api_key);
+    params.insert("token", token);
+    let sig = calculate_lastfm_signature(&params, secret);
+    params.insert("api_sig", &sig);
+    params.insert("format", "json");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://ws.audioscrobbler.com/2.0/")
+        .query(&params)
+        .send()
+        .await
+        .map_err(|e| crate::error::ResoError::Scrobbler(e.to_string()))?;
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| crate::error::ResoError::Scrobbler(e.to_string()))?;
+
+    if let Some(session) = json.get("session") {
+        let username = session
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        let key = session
+            .get("key")
+            .and_then(|k| k.as_str())
+            .unwrap_or("")
+            .to_string();
+        if !key.is_empty() {
+            return Ok((username, key));
+        }
+    }
+
+    let msg = json
+        .get("message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("Failed to obtain session key");
+    Err(crate::error::ResoError::Scrobbler(msg.to_string()))
+}
+
