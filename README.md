@@ -193,6 +193,7 @@ systemctl --user restart pipewire wireplumber
 | `reso like` | Bookmark current track to `liked_tracks.md` | `reso like` |
 | `reso copy` | Copy `Artist - Title` to system clipboard | `reso copy` |
 | `reso volume [action]` | Hardware volume control via `wpctl` | `reso volume up` / `reso volume 40%` |
+| `reso config` | Show effective settings and config paths without printing credentials | `reso config` |
 | `reso daemon` | Run headless background daemon with MPRIS2 | `reso daemon` |
 
 ---

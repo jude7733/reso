@@ -79,6 +79,9 @@ pub enum Commands {
     /// Query or adjust PipeWire hardware volume (`wpctl`).
     Volume(VolumeArgs),
 
+    /// Show effective configuration and Reso data paths without revealing secrets.
+    Config,
+
     /// Run in background headless daemon mode (MPV IPC + MPRIS2 D-Bus).
     Daemon,
 }

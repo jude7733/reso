@@ -139,12 +139,36 @@ async fn main() -> anyhow::Result<()> {
             handle_volume_command(&args.action)?;
         }
 
+        Some(Commands::Config) => {
+            handle_config_command(&config_manager);
+        }
+
         Some(Commands::Daemon) => {
             handle_daemon_command(config_manager).await?;
         }
     }
 
     Ok(())
+}
+
+fn handle_config_command(config_manager: &ConfigManager) {
+    let directory = util::config_dir();
+    let config = &config_manager.config;
+    println!("Reso effective configuration");
+    println!("Config directory:             {}", directory.display());
+    println!("Configuration file:           {}", directory.join("config.toml").display());
+    println!("Station catalog:              {}", directory.join("stations.toml").display());
+    println!("Liked tracks:                 {}", directory.join("liked_tracks.toml").display());
+    println!("MPV IPC socket:               {}", config.socket_path.display());
+    println!("Recording directory:          {}", config.record_dir.display());
+    println!("Configured stations:          {}", config_manager.catalog.stations.len());
+    println!("Default station:               {}", config.default_station_id.as_deref().unwrap_or("(none)"));
+    println!("UI theme:                      {}", config.ui.theme);
+    println!("Desktop notifications:         {}", if config.notifications.enabled { "enabled" } else { "disabled" });
+    println!("Automatic stream reconnect:    {}", if config.reconnect_streams { "enabled" } else { "disabled" });
+    println!("Reconnect maximum delay:       {} seconds", config.reconnect_max_delay_secs);
+    println!("Last.fm scrobbling:            {}", if config.lastfm.enabled { "enabled" } else { "disabled" });
+    println!("ListenBrainz scrobbling:       {}", if config.listenbrainz.enabled { "enabled" } else { "disabled" });
 }
 
 fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Path) -> Result<()> {
