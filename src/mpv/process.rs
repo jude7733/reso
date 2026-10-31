@@ -78,15 +78,15 @@ impl MpvProcessManager {
             .arg("--gapless-audio=yes")
             .arg("--force-seekable=no")
             .arg("--terminal=no")
-            .arg("--msg-level=all=no")
-            ;
+            .arg("--msg-level=all=no");
         if self.reconnect_streams {
             command.arg(format!(
                 "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max={}",
                 self.reconnect_max_delay_secs
             ));
         }
-        let child = command.stdin(Stdio::null())
+        let child = command
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

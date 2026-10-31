@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use zbus::zvariant::Value;
 
 pub async fn notify(summary: &str, body: &str) -> Result<()> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|error| ResoError::Custom(format!("Desktop notifications unavailable: {error}")))?;
+    let connection = zbus::Connection::session().await.map_err(|error| {
+        ResoError::Custom(format!("Desktop notifications unavailable: {error}"))
+    })?;
     let proxy = zbus::Proxy::new(
         &connection,
         "org.freedesktop.Notifications",

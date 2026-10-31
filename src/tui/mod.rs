@@ -37,7 +37,10 @@ use tokio::sync::mpsc;
 pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     // 1. Ensure MPV headless daemon is running
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
+        .with_reconnect_policy(
+            config_manager.config.reconnect_streams,
+            config_manager.config.reconnect_max_delay_secs,
+        );
     mpv_proc.ensure_running().await?;
 
     // 2. Connect MPV IPC client

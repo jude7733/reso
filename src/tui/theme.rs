@@ -61,7 +61,7 @@ impl Theme {
             status_lossless: Color::Rgb(0, 180, 80),
             status_warning: Color::Yellow,
             status_danger: Color::Red,
-            spectrum_low: Color::Rgb(0, 150, 195),   // Deep ocean teal
+            spectrum_low: Color::Rgb(0, 150, 195), // Deep ocean teal
             spectrum_mid: Color::Cyan,
             spectrum_high: Color::Rgb(255, 195, 75), // Amber peak glow
         }
@@ -71,8 +71,8 @@ impl Theme {
     pub fn cyberpunk() -> Self {
         Self {
             name: "cyberpunk".to_string(),
-            primary: Color::Rgb(255, 0, 128),     // Hot Pink / Magenta
-            secondary: Color::Rgb(0, 255, 255),   // Neon Cyan
+            primary: Color::Rgb(255, 0, 128),   // Hot Pink / Magenta
+            secondary: Color::Rgb(0, 255, 255), // Neon Cyan
             background: None,
             foreground: Color::Rgb(240, 240, 255),
             text_dim: Color::Rgb(110, 90, 130),
@@ -111,6 +111,27 @@ impl Theme {
         }
     }
 
+    pub fn high_contrast() -> Self {
+        Self {
+            name: "high_contrast".to_string(),
+            primary: Color::Yellow,
+            secondary: Color::Cyan,
+            background: Some(Color::Black),
+            foreground: Color::White,
+            text_dim: Color::Gray,
+            border: Color::Gray,
+            border_active: Color::Yellow,
+            selection_bg: Color::Blue,
+            selection_fg: Color::White,
+            status_lossless: Color::Green,
+            status_warning: Color::Yellow,
+            status_danger: Color::LightRed,
+            spectrum_low: Color::Cyan,
+            spectrum_mid: Color::Yellow,
+            spectrum_high: Color::White,
+        }
+    }
+
     /// Loads a theme by name or custom file path, falling back to `audiophile_dark` if missing.
     pub fn load(theme_name: &str, custom_path: Option<&str>) -> Self {
         match theme_name {
@@ -136,6 +157,7 @@ impl Theme {
             }
             "cyberpunk" => Self::cyberpunk(),
             "monochrome" => Self::monochrome(),
+            "high_contrast" => Self::high_contrast(),
             "audiophile_dark" => Self::audiophile_dark(),
             _ => {
                 // If custom path is provided, try loading it
@@ -176,9 +198,8 @@ impl Theme {
         let colors = wal.colors.unwrap_or_default();
         let special = wal.special.unwrap_or_default();
 
-        let get_color = |key: &str| -> Option<Color> {
-            colors.get(key).and_then(|hex| parse_hex_color(hex))
-        };
+        let get_color =
+            |key: &str| -> Option<Color> { colors.get(key).and_then(|hex| parse_hex_color(hex)) };
 
         let bg_color = special
             .background
@@ -330,9 +351,8 @@ impl Theme {
             }
         } else if !palette.is_empty() {
             // If only [palette] is defined, map pywal colors automatically
-            let get_palette = |key: &str| -> Option<Color> {
-                palette.get(key).and_then(|s| parse_hex_color(s))
-            };
+            let get_palette =
+                |key: &str| -> Option<Color> { palette.get(key).and_then(|s| parse_hex_color(s)) };
 
             if let Some(c) = get_palette("color4").or_else(|| get_palette("color6")) {
                 base.primary = c;

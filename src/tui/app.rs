@@ -590,8 +590,7 @@ impl App {
         self.invalidate_station_cache();
         self.config_manager.config.ui.default_sort_mode =
             self.station_sort_mode.to_str_key().to_string();
-        self.settings_state.default_sort_mode =
-            self.station_sort_mode.to_str_key().to_string();
+        self.settings_state.default_sort_mode = self.station_sort_mode.to_str_key().to_string();
         let _ = self.config_manager.save_config();
         self.show_toast(
             format!("Station sort: {}", self.station_sort_mode.display_label()),
@@ -608,12 +607,11 @@ impl App {
         self.config_manager.config.ui.default_sort_mode = s.default_sort_mode.clone();
         self.config_manager.config.ui.cover_mode = s.cover_mode.clone();
 
-        self.config_manager.config.default_station_id =
-            if s.default_station_id.trim().is_empty() {
-                None
-            } else {
-                Some(s.default_station_id.trim().to_string())
-            };
+        self.config_manager.config.default_station_id = if s.default_station_id.trim().is_empty() {
+            None
+        } else {
+            Some(s.default_station_id.trim().to_string())
+        };
         self.config_manager.config.record_dir = PathBuf::from(&s.record_dir);
         self.config_manager.config.socket_path = PathBuf::from(&s.socket_path);
         self.config_manager.config.notifications.enabled = s.notifications_enabled;
@@ -684,7 +682,10 @@ impl App {
     /// Cleans and sanitizes legacy imported liked tracks that may contain raw markdown,
     /// duplicated timestamps, or embedded metadata in the artist field.
     pub fn sanitize_legacy_track(track: &mut crate::config::LikedTrack) {
-        if track.artist.contains("**") || track.artist.contains("[Station:") || track.title == "Liked Track" {
+        if track.artist.contains("**")
+            || track.artist.contains("[Station:")
+            || track.title == "Liked Track"
+        {
             let raw = track.artist.clone();
             // 1. Strip leading timestamp, e.g. `[2026-08-16 22:08:59]` or [2026-08-16 22:08:59]
             let without_ts = if let Some(idx) = raw.find("]` ") {
@@ -706,8 +707,18 @@ impl App {
 
             // 3. Parse Artist - Title
             if let Some(dash_idx) = song_part.find(" - ") {
-                let art = song_part[..dash_idx].replace("**", "").replace('*', "").replace('`', "").trim().to_string();
-                let tit = song_part[dash_idx + 3..].replace("**", "").replace('*', "").replace('`', "").trim().to_string();
+                let art = song_part[..dash_idx]
+                    .replace("**", "")
+                    .replace('*', "")
+                    .replace('`', "")
+                    .trim()
+                    .to_string();
+                let tit = song_part[dash_idx + 3..]
+                    .replace("**", "")
+                    .replace('*', "")
+                    .replace('`', "")
+                    .trim()
+                    .to_string();
                 if !art.is_empty() {
                     track.artist = art;
                 }
@@ -715,7 +726,12 @@ impl App {
                     track.title = tit;
                 }
             } else {
-                let clean = song_part.replace("**", "").replace('*', "").replace('`', "").trim().to_string();
+                let clean = song_part
+                    .replace("**", "")
+                    .replace('*', "")
+                    .replace('`', "")
+                    .trim()
+                    .to_string();
                 if !clean.is_empty() {
                     track.artist = clean;
                 }
@@ -821,7 +837,9 @@ impl App {
         } else {
             &self.cached_filtered_indices
         };
-        indices.get(filtered_idx).and_then(|&i| self.catalog.stations.get(i))
+        indices
+            .get(filtered_idx)
+            .and_then(|&i| self.catalog.stations.get(i))
     }
 
     /// Internal: recomputes filtered + sorted station indices from catalog.
@@ -1104,28 +1122,24 @@ impl App {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
                         let text = format!("{} - {}", track.artist, track.title);
                         match copy_to_clipboard(&text) {
-                            Ok(_) => self.show_toast(
-                                format!("✓ Copied: {}", text),
-                                ToastLevel::Success,
-                            ),
-                            Err(e) => self.show_toast(
-                                format!("✗ Copy failed: {}", e),
-                                ToastLevel::Error,
-                            ),
+                            Ok(_) => {
+                                self.show_toast(format!("✓ Copied: {}", text), ToastLevel::Success)
+                            }
+                            Err(e) => {
+                                self.show_toast(format!("✗ Copy failed: {}", e), ToastLevel::Error)
+                            }
                         }
                     }
                 }
                 _ => {
                     let title_str = self.track_metadata.display_name();
                     match copy_to_clipboard(&title_str) {
-                        Ok(_) => self.show_toast(
-                            format!("✓ Copied: {}", title_str),
-                            ToastLevel::Success,
-                        ),
-                        Err(e) => self.show_toast(
-                            format!("✗ Copy failed: {}", e),
-                            ToastLevel::Error,
-                        ),
+                        Ok(_) => {
+                            self.show_toast(format!("✓ Copied: {}", title_str), ToastLevel::Success)
+                        }
+                        Err(e) => {
+                            self.show_toast(format!("✗ Copy failed: {}", e), ToastLevel::Error)
+                        }
                     }
                 }
             },
@@ -1181,14 +1195,11 @@ impl App {
                     if let Some(st) = self.filtered_station_at(self.station_list_index) {
                         let url = st.url.clone();
                         match copy_to_clipboard(&url) {
-                            Ok(_) => self.show_toast(
-                                format!("✓ Copied URL: {}", url),
-                                ToastLevel::Success,
-                            ),
-                            Err(e) => self.show_toast(
-                                format!("✗ Copy failed: {}", e),
-                                ToastLevel::Error,
-                            ),
+                            Ok(_) => self
+                                .show_toast(format!("✓ Copied URL: {}", url), ToastLevel::Success),
+                            Err(e) => {
+                                self.show_toast(format!("✗ Copy failed: {}", e), ToastLevel::Error)
+                            }
                         }
                     }
                 }
@@ -1196,14 +1207,12 @@ impl App {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
                         let text = format!("{} - {}", track.artist, track.title);
                         match copy_to_clipboard(&text) {
-                            Ok(_) => self.show_toast(
-                                format!("✓ Copied: {}", text),
-                                ToastLevel::Success,
-                            ),
-                            Err(e) => self.show_toast(
-                                format!("✗ Copy failed: {}", e),
-                                ToastLevel::Error,
-                            ),
+                            Ok(_) => {
+                                self.show_toast(format!("✓ Copied: {}", text), ToastLevel::Success)
+                            }
+                            Err(e) => {
+                                self.show_toast(format!("✗ Copy failed: {}", e), ToastLevel::Error)
+                            }
                         }
                     }
                 }
@@ -1249,12 +1258,21 @@ impl App {
                 }
                 ActiveTab::Liked => {
                     if let Some(track) = self.liked_tracks.get(self.liked_list_index) {
-                        let st_opt = self.config_manager.find_station(&track.station).cloned().or_else(|| {
-                            let query_lower = track.station.to_lowercase();
-                            self.catalog.stations.iter().find(|s| {
-                                s.name.to_lowercase().contains(&query_lower) || query_lower.contains(&s.name.to_lowercase())
-                            }).cloned()
-                        });
+                        let st_opt = self
+                            .config_manager
+                            .find_station(&track.station)
+                            .cloned()
+                            .or_else(|| {
+                                let query_lower = track.station.to_lowercase();
+                                self.catalog
+                                    .stations
+                                    .iter()
+                                    .find(|s| {
+                                        s.name.to_lowercase().contains(&query_lower)
+                                            || query_lower.contains(&s.name.to_lowercase())
+                                    })
+                                    .cloned()
+                            });
                         if let Some(st) = st_opt {
                             let _ = self.action_tx.send(AppAction::Play(st)).await;
                         } else {
@@ -1788,9 +1806,7 @@ impl App {
                         rp_channel: None,
                     };
 
-                    let _ = self
-                        .config_manager
-                        .edit_station(&orig_id, updated.clone());
+                    let _ = self.config_manager.edit_station(&orig_id, updated.clone());
                     self.catalog = self.config_manager.catalog.clone();
                     self.invalidate_station_cache();
                     if let Some(ref cur) = self.current_station {
@@ -1954,7 +1970,8 @@ impl App {
                         self.settings_state.theme = match self.settings_state.theme.as_str() {
                             "audiophile_dark" => "cyberpunk".to_string(),
                             "cyberpunk" => "monochrome".to_string(),
-                            "monochrome" => "wal".to_string(),
+                            "monochrome" => "high_contrast".to_string(),
+                            "high_contrast" => "wal".to_string(),
                             _ => "audiophile_dark".to_string(),
                         };
                         self.config_manager.config.ui.theme = self.settings_state.theme.clone();
@@ -1966,22 +1983,17 @@ impl App {
                         );
                     }
                     1 => {
-                        self.settings_state.show_visualizer =
-                            !self.settings_state.show_visualizer;
+                        self.settings_state.show_visualizer = !self.settings_state.show_visualizer;
                         let state_str = if self.settings_state.show_visualizer {
                             "Enabled"
                         } else {
                             "Disabled"
                         };
-                        self.show_toast(
-                            format!("Visualizer {}", state_str),
-                            ToastLevel::Info,
-                        );
+                        self.show_toast(format!("Visualizer {}", state_str), ToastLevel::Info);
                     }
                     2 => {
-                        let curr = StationSortMode::from_str_key(
-                            &self.settings_state.default_sort_mode,
-                        );
+                        let curr =
+                            StationSortMode::from_str_key(&self.settings_state.default_sort_mode);
                         let nxt = curr.next();
                         self.settings_state.default_sort_mode = nxt.to_str_key().to_string();
                         self.show_toast(
@@ -2012,36 +2024,53 @@ impl App {
                         self.settings_state.is_editing_text = true;
                     }
                     1 => {
-                        self.settings_state.text_buffer =
-                            self.settings_state.record_dir.clone();
+                        self.settings_state.text_buffer = self.settings_state.record_dir.clone();
                         self.settings_state.is_editing_text = true;
                     }
                     2 => {
-                        self.settings_state.text_buffer =
-                            self.settings_state.socket_path.clone();
+                        self.settings_state.text_buffer = self.settings_state.socket_path.clone();
                         self.settings_state.is_editing_text = true;
                     }
                     3 => {
-                        self.settings_state.notifications_enabled = !self.settings_state.notifications_enabled;
+                        self.settings_state.notifications_enabled =
+                            !self.settings_state.notifications_enabled;
                         self.show_toast(
-                            format!("Desktop notifications {}", if self.settings_state.notifications_enabled { "enabled" } else { "disabled" }),
+                            format!(
+                                "Desktop notifications {}",
+                                if self.settings_state.notifications_enabled {
+                                    "enabled"
+                                } else {
+                                    "disabled"
+                                }
+                            ),
                             ToastLevel::Info,
                         );
                     }
                     4 => {
-                        self.settings_state.reconnect_streams = !self.settings_state.reconnect_streams;
-                        self.show_toast(format!("Stream reconnect {}", if self.settings_state.reconnect_streams { "enabled" } else { "disabled" }), ToastLevel::Info);
+                        self.settings_state.reconnect_streams =
+                            !self.settings_state.reconnect_streams;
+                        self.show_toast(
+                            format!(
+                                "Stream reconnect {}",
+                                if self.settings_state.reconnect_streams {
+                                    "enabled"
+                                } else {
+                                    "disabled"
+                                }
+                            ),
+                            ToastLevel::Info,
+                        );
                     }
                     5 => {
-                        self.settings_state.text_buffer = self.settings_state.reconnect_max_delay_secs.clone();
+                        self.settings_state.text_buffer =
+                            self.settings_state.reconnect_max_delay_secs.clone();
                         self.settings_state.is_editing_text = true;
                     }
                     _ => {}
                 },
                 2 => match self.settings_state.selected_field {
                     0 => {
-                        self.settings_state.lastfm_enabled =
-                            !self.settings_state.lastfm_enabled;
+                        self.settings_state.lastfm_enabled = !self.settings_state.lastfm_enabled;
                         let s = if self.settings_state.lastfm_enabled {
                             "Enabled"
                         } else {
@@ -2069,14 +2098,20 @@ impl App {
                                 "Please configure Last.fm API Key and Shared Secret first",
                                 ToastLevel::Warning,
                             );
-                        } else if let Some(token) = self.settings_state.lastfm_pending_token.clone() {
+                        } else if let Some(token) = self.settings_state.lastfm_pending_token.clone()
+                        {
                             // Try to exchange the pending token for session key
-                            match crate::integration::scrobbler::fetch_lastfm_session(&api_key, &secret, &token).await {
+                            match crate::integration::scrobbler::fetch_lastfm_session(
+                                &api_key, &secret, &token,
+                            )
+                            .await
+                            {
                                 Ok((username, sk)) => {
                                     self.settings_state.lastfm_username = username.clone();
                                     self.settings_state.lastfm_session_key = sk.clone();
                                     self.settings_state.lastfm_pending_token = None;
-                                    self.config_manager.config.lastfm.username = Some(username.clone());
+                                    self.config_manager.config.lastfm.username =
+                                        Some(username.clone());
                                     self.config_manager.config.lastfm.session_key = Some(sk);
                                     self.config_manager.config.lastfm.api_key = Some(api_key);
                                     self.config_manager.config.lastfm.api_secret = Some(secret);
@@ -2092,7 +2127,9 @@ impl App {
                                 }
                                 Err(e) => {
                                     let err_str = e.to_string();
-                                    if err_str.contains("Unauthorized") || err_str.contains("authorized") {
+                                    if err_str.contains("Unauthorized")
+                                        || err_str.contains("authorized")
+                                    {
                                         self.show_toast(
                                             "Click 'Yes, allow access' in your browser, then press Enter here",
                                             ToastLevel::Warning,
@@ -2108,7 +2145,11 @@ impl App {
                             }
                         } else {
                             // Request a new token and open the browser
-                            match crate::integration::scrobbler::request_lastfm_token(&api_key, &secret).await {
+                            match crate::integration::scrobbler::request_lastfm_token(
+                                &api_key, &secret,
+                            )
+                            .await
+                            {
                                 Ok(token) => {
                                     let auth_url = format!(
                                         "https://www.last.fm/api/auth/?api_key={}&token={}",
@@ -2203,7 +2244,11 @@ impl App {
                         && self.config_manager.config.notifications.track_changes
                         && (m.title.is_some() || m.raw_title.is_some())
                     {
-                        let station = self.current_station.as_ref().map(|station| station.name.as_str()).unwrap_or("Reso");
+                        let station = self
+                            .current_station
+                            .as_ref()
+                            .map(|station| station.name.as_str())
+                            .unwrap_or("Reso");
                         let body = m.display_name();
                         let notification_key = format!("{station}\0{body}");
                         if self.last_notified_track.as_deref() != Some(&notification_key) {
@@ -2211,8 +2256,12 @@ impl App {
                             let summary = format!("Now playing on {station}");
                             let action_tx = self.action_tx.clone();
                             tokio::spawn(async move {
-                                if let Err(error) = crate::integration::notifications::notify(&summary, &body).await {
-                                    let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                                if let Err(error) =
+                                    crate::integration::notifications::notify(&summary, &body).await
+                                {
+                                    let _ = action_tx
+                                        .send(AppAction::NotificationFailed(error.to_string()))
+                                        .await;
                                 }
                             });
                         }
@@ -2275,13 +2324,25 @@ impl App {
                 if self.config_manager.config.notifications.enabled
                     && self.config_manager.config.notifications.recording
                 {
-                    let summary = if is_recording { "Recording started" } else { "Recording saved" };
-                    let station = self.current_station.as_ref().map(|station| station.name.as_str()).unwrap_or("Current stream");
+                    let summary = if is_recording {
+                        "Recording started"
+                    } else {
+                        "Recording saved"
+                    };
+                    let station = self
+                        .current_station
+                        .as_ref()
+                        .map(|station| station.name.as_str())
+                        .unwrap_or("Current stream");
                     let body = format!("{station}");
                     let action_tx = self.action_tx.clone();
                     tokio::spawn(async move {
-                        if let Err(error) = crate::integration::notifications::notify(summary, &body).await {
-                            let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                        if let Err(error) =
+                            crate::integration::notifications::notify(summary, &body).await
+                        {
+                            let _ = action_tx
+                                .send(AppAction::NotificationFailed(error.to_string()))
+                                .await;
                         }
                     });
                 }
@@ -2293,8 +2354,13 @@ impl App {
                 {
                     let action_tx = self.action_tx.clone();
                     tokio::spawn(async move {
-                        if let Err(error) = crate::integration::notifications::notify("Reso playback error", &error).await {
-                            let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                        if let Err(error) =
+                            crate::integration::notifications::notify("Reso playback error", &error)
+                                .await
+                        {
+                            let _ = action_tx
+                                .send(AppAction::NotificationFailed(error.to_string()))
+                                .await;
                         }
                     });
                 }
@@ -2379,8 +2445,13 @@ impl App {
         self.scrobbler.tick().await;
 
         // Dynamic theme updates: default every 5 seconds (configurable via ui.theme_reload_interval_secs)
-        let theme_interval_ticks =
-            (self.config_manager.config.ui.theme_reload_interval_secs.max(1)) * 20;
+        let theme_interval_ticks = (self
+            .config_manager
+            .config
+            .ui
+            .theme_reload_interval_secs
+            .max(1))
+            * 20;
         if self.tick_count % theme_interval_ticks == 0 {
             self.check_theme_file_update();
         }

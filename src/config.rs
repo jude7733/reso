@@ -78,13 +78,25 @@ impl AppConfig {
         if self.record_dir.as_os_str().is_empty() {
             return Err(ResoError::Config("record_dir cannot be empty".to_string()));
         }
-        let valid_themes = ["audiophile_dark", "cyberpunk", "monochrome", "wal"];
+        let valid_themes = [
+            "audiophile_dark",
+            "cyberpunk",
+            "monochrome",
+            "high_contrast",
+            "wal",
+        ];
         if !valid_themes.contains(&self.ui.theme.as_str()) {
-            return Err(ResoError::Config(format!("unsupported UI theme: {}", self.ui.theme)));
+            return Err(ResoError::Config(format!(
+                "unsupported UI theme: {}",
+                self.ui.theme
+            )));
         }
         let valid_cover_modes = ["auto", "kitty", "sixel", "halfblocks", "off"];
         if !valid_cover_modes.contains(&self.ui.cover_mode.as_str()) {
-            return Err(ResoError::Config(format!("unsupported cover mode: {}", self.ui.cover_mode)));
+            return Err(ResoError::Config(format!(
+                "unsupported cover mode: {}",
+                self.ui.cover_mode
+            )));
         }
         Ok(())
     }
@@ -108,7 +120,12 @@ pub struct DesktopNotificationsConfig {
 
 impl Default for DesktopNotificationsConfig {
     fn default() -> Self {
-        Self { enabled: true, track_changes: true, errors: true, recording: false }
+        Self {
+            enabled: true,
+            track_changes: true,
+            errors: true,
+            recording: false,
+        }
     }
 }
 

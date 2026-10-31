@@ -66,9 +66,17 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(if compact {
-            [Constraint::Length(8), Constraint::Min(0), Constraint::Length(0)]
+            [
+                Constraint::Length(8),
+                Constraint::Min(0),
+                Constraint::Length(0),
+            ]
         } else {
-            [Constraint::Length(13), Constraint::Min(45), Constraint::Length(35)]
+            [
+                Constraint::Length(13),
+                Constraint::Min(45),
+                Constraint::Length(35),
+            ]
         })
         .split(area);
 
@@ -87,7 +95,9 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             width: 2,
             height: 1,
         };
-        let icon_rendered = app.cover_art_manager.render_app_icon(icon_rect, f.buffer_mut());
+        let icon_rendered = app
+            .cover_art_manager
+            .render_app_icon(icon_rect, f.buffer_mut());
 
         let text_x = if icon_rendered {
             inner_logo.x + 4
@@ -454,7 +464,10 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )];
         if st.tags.is_empty() {
-            tag_spans.push(Span::styled("none", Style::default().fg(app.theme.text_dim)));
+            tag_spans.push(Span::styled(
+                "none",
+                Style::default().fg(app.theme.text_dim),
+            ));
         } else {
             for (ti, tag) in st.tags.iter().enumerate() {
                 if ti > 0 {
@@ -471,16 +484,16 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         let url_truncated = crate::util::truncate_str(&st.url, max_url_len);
         let url_line = vec![
             Span::styled("🔗 URL:  ", Style::default().fg(app.theme.text_dim)),
-            Span::styled(
-                url_truncated,
-                Style::default().fg(app.theme.foreground),
-            ),
+            Span::styled(url_truncated, Style::default().fg(app.theme.foreground)),
         ];
 
         vec![Line::from(tag_spans), Line::from(url_line)]
     } else {
         vec![
-            Line::styled(" No station selected", Style::default().fg(app.theme.text_dim)),
+            Line::styled(
+                " No station selected",
+                Style::default().fg(app.theme.text_dim),
+            ),
             Line::styled(
                 " Press [a] to add a radio endpoint",
                 Style::default().fg(app.theme.text_dim),
@@ -784,7 +797,9 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
         // Square cover art: 1 character cell height ~ 2 cell width
         let max_allowed_width = (inner_area.width * 36) / 100;
         let available_height = inner_area.height.saturating_sub(1);
-        let art_width = ((available_height * 2) as u16).min(max_allowed_width).max(10);
+        let art_width = ((available_height * 2) as u16)
+            .min(max_allowed_width)
+            .max(10);
         let art_height = (art_width / 2).min(available_height);
         let left_col_width = art_width + 3; // Artwork width + 3 cols margin
 
@@ -1060,17 +1075,11 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         let line = Line::from(vec![
             Span::styled(
                 icon,
-                Style::default()
-                    .fg(fg)
-                    .bg(bg)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" {} ", toast.message),
-                Style::default()
-                    .fg(fg)
-                    .bg(bg)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
             ),
         ]);
         let toast_widget = Paragraph::new(line).alignment(Alignment::Center);
@@ -1153,57 +1162,134 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("📻 ", Style::default().fg(Color::Cyan)),
                 Span::styled(
                     "Lossless Radio Discovery Guide",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::raw(""),
             Line::from(vec![
-                Span::styled("Type a query above and press ", Style::default().fg(Color::Gray)),
-                Span::styled("[Enter]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(" to query 30,000+ public radio streams via Radio-Browser.info.", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    "Type a query above and press ",
+                    Style::default().fg(Color::Gray),
+                ),
+                Span::styled(
+                    "[Enter]",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " to query 30,000+ public radio streams via Radio-Browser.info.",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::raw(""),
+            Line::from(vec![Span::styled(
+                "Curated Audiophile & Lossless Search Terms:",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "flac",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "       - Lossless FLAC streams worldwide (CD-quality / Hi-Res)",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "jazz",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "       - High fidelity jazz, blues, and acoustic performances",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "classical",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  - Symphonies, concertos, opera, and baroque archives",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "ambient",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "    - Atmospheric soundscapes, meditation, and chillout",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "electronic",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " - Techno, synthwave, trance, and IDM broadcasts",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "96khz",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "      - Studio Master 24-bit 96 kHz high-resolution feeds",
+                    Style::default().fg(Color::Gray),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "paradise",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "   - Radio Paradise commercial-free eclectic mixes",
+                    Style::default().fg(Color::Gray),
+                ),
             ]),
             Line::raw(""),
             Line::from(vec![
-                Span::styled("Curated Audiophile & Lossless Search Terms:", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("flac", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("       - Lossless FLAC streams worldwide (CD-quality / Hi-Res)", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("jazz", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("       - High fidelity jazz, blues, and acoustic performances", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("classical", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("  - Symphonies, concertos, opera, and baroque archives", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("ambient", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("    - Atmospheric soundscapes, meditation, and chillout", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("electronic", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" - Techno, synthwave, trance, and IDM broadcasts", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("96khz", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("      - Studio Master 24-bit 96 kHz high-resolution feeds", Style::default().fg(Color::Gray)),
-            ]),
-            Line::from(vec![
-                Span::styled("  • ", Style::default().fg(Color::Cyan)),
-                Span::styled("paradise", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("   - Radio Paradise commercial-free eclectic mixes", Style::default().fg(Color::Gray)),
-            ]),
-            Line::raw(""),
-            Line::from(vec![
-                Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Actions: ",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
                 Span::styled("Play Stream  •  ", Style::default().fg(Color::Gray)),
                 Span::styled("['a'] ", Style::default().fg(Color::Yellow)),
@@ -1255,7 +1341,8 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
 
             let rate_badge = format!("[{}]", s.codec);
             let badge_width = rate_badge.len() + 2;
-            let max_name = (list_area.width.saturating_sub(badge_width as u16 + 4) as usize).max(10);
+            let max_name =
+                (list_area.width.saturating_sub(badge_width as u16 + 4) as usize).max(10);
             let trunc_name = truncate_str(&s.name, max_name);
             let padded_name = format!("{:<width$}", trunc_name, width = max_name);
 
@@ -1264,7 +1351,9 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(
                     format!(" {}", rate_badge),
                     if is_sel {
-                        Style::default().fg(Color::Rgb(140, 200, 255)).add_modifier(Modifier::BOLD)
+                        Style::default()
+                            .fg(Color::Rgb(140, 200, 255))
+                            .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(Color::Cyan)
                     },
@@ -1338,14 +1427,34 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let preview_lines = vec![
                 Line::from(vec![
                     Span::styled("📻 Station:  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&s.name, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        &s.name,
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::raw(""),
                 Line::from(vec![
                     Span::styled("🎵 Audio:    ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("[{}] ", s.codec), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("[{}] ", rate_str), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("[{}]", bit_str), Style::default().fg(Color::Rgb(255, 215, 100)).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("[{}] ", s.codec),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("[{}] ", rate_str),
+                        Style::default()
+                            .fg(Color::Rgb(100, 220, 255))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("[{}]", bit_str),
+                        Style::default()
+                            .fg(Color::Rgb(255, 215, 100))
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("🏷 Tags:     ", Style::default().fg(Color::DarkGray)),
@@ -1353,18 +1462,39 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 ]),
                 Line::from(vec![
                     Span::styled("🔗 Stream:   ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(truncate_str(&s.url, p_area.width.saturating_sub(15) as usize), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        truncate_str(&s.url, p_area.width.saturating_sub(15) as usize),
+                        Style::default().fg(Color::Cyan),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("🏠 Homepage: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(truncate_str(hp_str, p_area.width.saturating_sub(15) as usize), Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        truncate_str(hp_str, p_area.width.saturating_sub(15) as usize),
+                        Style::default().fg(Color::Gray),
+                    ),
                 ]),
                 Line::raw(""),
                 Line::from(vec![
-                    Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-                    Span::styled("[Enter] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Actions: ",
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "[Enter] ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("Play Stream  •  ", Style::default().fg(Color::Gray)),
-                    Span::styled("['a'] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "['a'] ",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("Add to Catalog", Style::default().fg(Color::Gray)),
                 ]),
             ];
@@ -2151,10 +2281,7 @@ fn render_inspector_diagnostics_and_matrix(f: &mut Frame, app: &App, area: Rect)
 
 /// Cleans markdown artifacts from legacy imported liked tracks.
 fn clean_legacy_str(s: &str) -> String {
-    let mut cleaned = s
-        .replace("**", "")
-        .replace('*', "")
-        .replace('`', "");
+    let mut cleaned = s.replace("**", "").replace('*', "").replace('`', "");
     if let Some(pos) = cleaned.find("] ") {
         if cleaned.starts_with('[') && pos < 25 {
             cleaned = cleaned[pos + 2..].to_string();
@@ -2293,26 +2420,59 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let lines = vec![
                 Line::from(vec![
                     Span::styled("🎵 Track:   ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(clean_title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        clean_title,
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("♪  Artist:  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(clean_artist, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        clean_artist,
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("💿 Album:   ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(track.album.as_deref().unwrap_or("Single / Live Broadcast"), Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        track.album.as_deref().unwrap_or("Single / Live Broadcast"),
+                        Style::default().fg(Color::Gray),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("📻 Station: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&track.station, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        &track.station,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::raw(""),
                 Line::from(vec![
                     Span::styled("Audio Spec: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("[{}] ", codec_str), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("[{}] ", rate_str), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("[{}]", bit_depth_str), Style::default().fg(Color::Rgb(255, 215, 100)).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("[{}] ", codec_str),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("[{}] ", rate_str),
+                        Style::default()
+                            .fg(Color::Rgb(100, 220, 255))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("[{}]", bit_depth_str),
+                        Style::default()
+                            .fg(Color::Rgb(255, 215, 100))
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("🗓 Bookmarked: ", Style::default().fg(Color::DarkGray)),
@@ -2320,7 +2480,12 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 ]),
                 Line::raw(""),
                 Line::from(vec![
-                    Span::styled("Actions: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Actions: ",
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
                     Span::styled("Tune Station  •  ", Style::default().fg(Color::Gray)),
                     Span::styled("[c/y] ", Style::default().fg(Color::Cyan)),
@@ -2333,8 +2498,10 @@ fn render_liked_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let p = Paragraph::new(lines);
             f.render_widget(p, inner);
         } else {
-            let empty_text = Paragraph::new("No track selected.\nPress 'l' while listening to bookmark tracks here.")
-                .style(Style::default().fg(Color::DarkGray));
+            let empty_text = Paragraph::new(
+                "No track selected.\nPress 'l' while listening to bookmark tracks here.",
+            )
+            .style(Style::default().fg(Color::DarkGray));
             f.render_widget(empty_text, inner);
         }
     }
@@ -2398,24 +2565,38 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
     match s.selected_section {
         0 => {
             // UI & Appearance
-            form_lines.push(Line::from(vec![
-                Span::styled("APPEARANCE & DISPLAY PREFERENCES", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]));
+            form_lines.push(Line::from(vec![Span::styled(
+                "APPEARANCE & DISPLAY PREFERENCES",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]));
             form_lines.push(Line::raw(""));
 
             // Field 0: Theme
             let sel0 = s.selected_field == 0;
             let cursor0 = if sel0 { "▶ " } else { "  " };
-            let style0 = if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let style0 = if sel0 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
             let hint = if s.theme == "wal" {
                 " (Dynamic wallpaper palette from ~/.cache/wal)"
             } else {
-                " (Space to cycle: audiophile_dark, cyberpunk, monochrome, wal)"
+                " (Space to cycle: audiophile_dark, cyberpunk, monochrome, high_contrast, wal)"
             };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor0, Style::default().fg(Color::Cyan)),
                 Span::styled("Color Theme:                ", style0),
-                Span::styled(format!("[ < {} > ]", s.theme), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("[ < {} > ]", s.theme),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(hint, Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
@@ -2423,12 +2604,25 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             // Field 1: Visualizer
             let sel1 = s.selected_field == 1;
             let cursor1 = if sel1 { "▶ " } else { "  " };
-            let style1 = if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
-            let (viz_check, viz_col) = if s.show_visualizer { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let style1 = if sel1 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let (viz_check, viz_col) = if s.show_visualizer {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor1, Style::default().fg(Color::Cyan)),
                 Span::styled("Spectrum Visualizer:        ", style1),
-                Span::styled(viz_check, Style::default().fg(viz_col).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    viz_check,
+                    Style::default().fg(viz_col).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
@@ -2436,12 +2630,23 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             // Field 2: Default Sort Mode
             let sel2 = s.selected_field == 2;
             let cursor2 = if sel2 { "▶ " } else { "  " };
-            let style2 = if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let style2 = if sel2 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
             let sort_label = StationSortMode::from_str_key(&s.default_sort_mode).display_label();
             form_lines.push(Line::from(vec![
                 Span::styled(cursor2, Style::default().fg(Color::Cyan)),
                 Span::styled("Default Station Sort Mode:  ", style2),
-                Span::styled(format!("[ < {} > ]", sort_label), Style::default().fg(Color::Rgb(100, 220, 255)).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("[ < {} > ]", sort_label),
+                    Style::default()
+                        .fg(Color::Rgb(100, 220, 255))
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to cycle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
@@ -2449,43 +2654,97 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             // Field 3: Cover Art Mode
             let sel3 = s.selected_field == 3;
             let cursor3 = if sel3 { "▶ " } else { "  " };
-            let style3 = if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
+            let style3 = if sel3 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor3, Style::default().fg(Color::Cyan)),
                 Span::styled("Album Cover Renderer:       ", style3),
-                Span::styled(format!("[ < {} > ]", s.cover_mode), Style::default().fg(Color::Rgb(255, 140, 255)).add_modifier(Modifier::BOLD)),
-                Span::styled(" (auto, kitty, sixel, halfblocks, off)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("[ < {} > ]", s.cover_mode),
+                    Style::default()
+                        .fg(Color::Rgb(255, 140, 255))
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " (auto, kitty, sixel, halfblocks, off)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
         1 => {
             // Playback & General
-            form_lines.push(Line::from(vec![
-                Span::styled("PLAYBACK & DIRECTORY CONFIGURATION", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]));
+            form_lines.push(Line::from(vec![Span::styled(
+                "PLAYBACK & DIRECTORY CONFIGURATION",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]));
             form_lines.push(Line::raw(""));
 
             // Field 0: Default Station ID
             let sel0 = s.selected_field == 0;
             let cursor0 = if sel0 { "▶ " } else { "  " };
-            let style0 = if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
-            let val0 = if sel0 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.default_station_id.clone() };
+            let style0 = if sel0 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let val0 = if sel0 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                s.default_station_id.clone()
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor0, Style::default().fg(Color::Cyan)),
                 Span::styled("Default Station Slug:       ", style0),
-                Span::styled(format!("\"{}\"", val0), if sel0 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
-                Span::styled(" (e.g. rp-main, Enter to edit)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("\"{}\"", val0),
+                    if sel0 && s.is_editing_text {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    },
+                ),
+                Span::styled(
+                    " (e.g. rp-main, Enter to edit)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
             form_lines.push(Line::raw(""));
 
             // Field 1: Recording Directory
             let sel1 = s.selected_field == 1;
             let cursor1 = if sel1 { "▶ " } else { "  " };
-            let style1 = if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
-            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.record_dir.clone() };
+            let style1 = if sel1 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let val1 = if sel1 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                s.record_dir.clone()
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor1, Style::default().fg(Color::Cyan)),
                 Span::styled("Stream Recording Directory: ", style1),
-                Span::styled(format!("\"{}\"", val1), if sel1 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
+                Span::styled(
+                    format!("\"{}\"", val1),
+                    if sel1 && s.is_editing_text {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    },
+                ),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
@@ -2493,65 +2752,185 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             // Field 2: MPV Socket Path
             let sel2 = s.selected_field == 2;
             let cursor2 = if sel2 { "▶ " } else { "  " };
-            let style2 = if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) };
-            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.socket_path.clone() };
+            let style2 = if sel2 {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let val2 = if sel2 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                s.socket_path.clone()
+            };
             form_lines.push(Line::from(vec![
                 Span::styled(cursor2, Style::default().fg(Color::Cyan)),
                 Span::styled("MPV Domain Socket Path:     ", style2),
-                Span::styled(format!("\"{}\"", val2), if sel2 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
+                Span::styled(
+                    format!("\"{}\"", val2),
+                    if sel2 && s.is_editing_text {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    },
+                ),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
             let sel3 = s.selected_field == 3;
-            let (notify_check, notify_color) = if s.notifications_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let (notify_check, notify_color) = if s.notifications_enabled {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel3 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Desktop Notifications:       ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(notify_check, Style::default().fg(notify_color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if sel3 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Desktop Notifications:       ",
+                    if sel3 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    notify_check,
+                    Style::default()
+                        .fg(notify_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
             let sel4 = s.selected_field == 4;
-            let (reconnect_check, reconnect_color) = if s.reconnect_streams { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let (reconnect_check, reconnect_color) = if s.reconnect_streams {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Automatic Stream Reconnect:  ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(reconnect_check, Style::default().fg(reconnect_color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if sel4 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Automatic Stream Reconnect:  ",
+                    if sel4 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    reconnect_check,
+                    Style::default()
+                        .fg(reconnect_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             let sel5 = s.selected_field == 5;
-            let delay_value = if sel5 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.reconnect_max_delay_secs.clone() };
+            let delay_value = if sel5 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                s.reconnect_max_delay_secs.clone()
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel5 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Reconnect Max Delay (seconds): ", if sel5 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(
+                    if sel5 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Reconnect Max Delay (seconds): ",
+                    if sel5 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
                 Span::styled(delay_value, Style::default().fg(Color::Cyan)),
-                Span::styled(" (1-300, Enter to edit)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    " (1-300, Enter to edit)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
         2 => {
             // Scrobbler Services
-            form_lines.push(Line::from(vec![
-                Span::styled("LAST.FM & LISTENBRAINZ AUDIOSCROBBLER", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]));
+            form_lines.push(Line::from(vec![Span::styled(
+                "LAST.FM & LISTENBRAINZ AUDIOSCROBBLER",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]));
             form_lines.push(Line::raw(""));
 
             // Field 0: Last.fm Enabled
             let sel0 = s.selected_field == 0;
-            let (l_check, l_col) = if s.lastfm_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let (l_check, l_col) = if s.lastfm_enabled {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel0 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm Scrobbling:         ", if sel0 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(l_check, Style::default().fg(l_col).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if sel0 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Last.fm Scrobbling:         ",
+                    if sel0 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    l_check,
+                    Style::default().fg(l_col).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
             // Field 1: Last.fm API Key
             let sel1 = s.selected_field == 1;
-            let val1 = if sel1 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_key.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            let val1 = if sel1 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                if s.lastfm_api_key.is_empty() {
+                    "(not set)".to_string()
+                } else {
+                    "••••••••••••••••".to_string()
+                }
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel1 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm API Key:            ", if sel1 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(
+                    if sel1 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Last.fm API Key:            ",
+                    if sel1 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
                 Span::styled(val1, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
@@ -2559,10 +2938,30 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
 
             // Field 2: Last.fm Shared Secret
             let sel2 = s.selected_field == 2;
-            let val2 = if sel2 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.lastfm_api_secret.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            let val2 = if sel2 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                if s.lastfm_api_secret.is_empty() {
+                    "(not set)".to_string()
+                } else {
+                    "••••••••••••••••".to_string()
+                }
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel2 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm Shared Secret:      ", if sel2 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(
+                    if sel2 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Last.fm Shared Secret:      ",
+                    if sel2 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
                 Span::styled(val2, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
@@ -2571,68 +2970,174 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
             // Field 3: Last.fm Authorization Status
             let sel3 = s.selected_field == 3;
             let (auth_badge, auth_color, auth_hint) = if !s.lastfm_session_key.is_empty() {
-                let user_disp = if s.lastfm_username.is_empty() { "Authorized".to_string() } else { format!("@{}", s.lastfm_username) };
-                (format!("[✓ Linked as {}]", user_disp), Color::Green, " (Enter to re-authenticate)")
+                let user_disp = if s.lastfm_username.is_empty() {
+                    "Authorized".to_string()
+                } else {
+                    format!("@{}", s.lastfm_username)
+                };
+                (
+                    format!("[✓ Linked as {}]", user_disp),
+                    Color::Green,
+                    " (Enter to re-authenticate)",
+                )
             } else if s.lastfm_pending_token.is_some() {
-                ("[⏳ Pending Browser Approval...]".to_string(), Color::Yellow, " (Enter to finish linking)")
+                (
+                    "[⏳ Pending Browser Approval...]".to_string(),
+                    Color::Yellow,
+                    " (Enter to finish linking)",
+                )
             } else {
-                ("[✗ Not Linked]".to_string(), Color::Red, " (Enter to Authorize in Browser)")
+                (
+                    "[✗ Not Linked]".to_string(),
+                    Color::Red,
+                    " (Enter to Authorize in Browser)",
+                )
             };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel3 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("Last.fm Authorization:      ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(auth_badge, Style::default().fg(auth_color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if sel3 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Last.fm Authorization:      ",
+                    if sel3 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    auth_badge,
+                    Style::default().fg(auth_color).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(auth_hint, Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
             // Field 4: ListenBrainz Enabled
             let sel4 = s.selected_field == 4;
-            let (b_check, b_col) = if s.listenbrainz_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            let (b_check, b_col) = if s.listenbrainz_enabled {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("ListenBrainz Scrobbling:    ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
-                Span::styled(b_check, Style::default().fg(b_col).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if sel4 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "ListenBrainz Scrobbling:    ",
+                    if sel4 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    b_check,
+                    Style::default().fg(b_col).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
             ]));
             form_lines.push(Line::raw(""));
 
             // Field 5: ListenBrainz User Token
             let sel5 = s.selected_field == 5;
-            let val5 = if sel5 && s.is_editing_text { format!("{}█", s.text_buffer) } else { if s.listenbrainz_token.is_empty() { "(not set)".to_string() } else { "••••••••••••••••".to_string() } };
+            let val5 = if sel5 && s.is_editing_text {
+                format!("{}█", s.text_buffer)
+            } else {
+                if s.listenbrainz_token.is_empty() {
+                    "(not set)".to_string()
+                } else {
+                    "••••••••••••••••".to_string()
+                }
+            };
             form_lines.push(Line::from(vec![
-                Span::styled(if sel5 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
-                Span::styled("ListenBrainz User Token:    ", if sel5 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(
+                    if sel5 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "ListenBrainz User Token:    ",
+                    if sel5 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
                 Span::styled(val5, Style::default().fg(Color::Cyan)),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
         }
         3 => {
             // Save & System
-            form_lines.push(Line::from(vec![
-                Span::styled("SYSTEM DIAGNOSTICS & PERSISTENCE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]));
+            form_lines.push(Line::from(vec![Span::styled(
+                "SYSTEM DIAGNOSTICS & PERSISTENCE",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]));
             form_lines.push(Line::raw(""));
 
             form_lines.push(Line::from(vec![
-                Span::styled("• Audio Engine:        ", Style::default().fg(Color::DarkGray)),
-                Span::styled("MPV Lossless Decoder (Bit-Exact Unity Volume)", Style::default().fg(Color::White)),
+                Span::styled(
+                    "• Audio Engine:        ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    "MPV Lossless Decoder (Bit-Exact Unity Volume)",
+                    Style::default().fg(Color::White),
+                ),
             ]));
             form_lines.push(Line::from(vec![
-                Span::styled("• Sound Server:        ", Style::default().fg(Color::DarkGray)),
-                Span::styled("PipeWire Dynamic Multi-Rate Clock Graph", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "• Sound Server:        ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    "PipeWire Dynamic Multi-Rate Clock Graph",
+                    Style::default().fg(Color::Cyan),
+                ),
             ]));
             form_lines.push(Line::from(vec![
-                Span::styled("• Hardware Target:     ", Style::default().fg(Color::DarkGray)),
-                Span::styled(app.pipeline_status.alsa_card_name.as_deref().unwrap_or("ALSA USB DAC"), Style::default().fg(Color::Green)),
+                Span::styled(
+                    "• Hardware Target:     ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    app.pipeline_status
+                        .alsa_card_name
+                        .as_deref()
+                        .unwrap_or("ALSA USB DAC"),
+                    Style::default().fg(Color::Green),
+                ),
             ]));
             form_lines.push(Line::from(vec![
-                Span::styled("• Stations in Catalog:  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{} lossless & hi-res stations", app.catalog.stations.len()), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    "• Stations in Catalog:  ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("{} lossless & hi-res stations", app.catalog.stations.len()),
+                    Style::default().fg(Color::Cyan),
+                ),
             ]));
             form_lines.push(Line::from(vec![
-                Span::styled("• Bookmarked Tracks:   ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{} tracks in liked_tracks.toml", app.liked_tracks.len()), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "• Bookmarked Tracks:   ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("{} tracks in liked_tracks.toml", app.liked_tracks.len()),
+                    Style::default().fg(Color::Yellow),
+                ),
             ]));
             form_lines.push(Line::raw(""));
             form_lines.push(Line::raw(""));
@@ -2641,9 +3146,15 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("▶ ", Style::default().fg(Color::Cyan)),
                 Span::styled(
                     " [ SAVE SETTINGS TO DISK (~/.config/reso/config.toml) ] ",
-                    Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("  (Press Enter or Ctrl+S)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "  (Press Enter or Ctrl+S)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]);
             form_lines.push(save_btn);
         }

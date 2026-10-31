@@ -226,8 +226,18 @@ impl Widget for VisualizerWidget<'_> {
                 )
             } else {
                 (
-                    self.state.bands.first().copied().unwrap_or(0.0).clamp(0.0, 1.0),
-                    self.state.peak_caps.first().copied().unwrap_or(0.0).clamp(0.0, 1.0),
+                    self.state
+                        .bands
+                        .first()
+                        .copied()
+                        .unwrap_or(0.0)
+                        .clamp(0.0, 1.0),
+                    self.state
+                        .peak_caps
+                        .first()
+                        .copied()
+                        .unwrap_or(0.0)
+                        .clamp(0.0, 1.0),
                 )
             };
 

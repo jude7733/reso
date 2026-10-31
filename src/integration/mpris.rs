@@ -22,19 +22,24 @@ impl MprisState {
     pub async fn emit_properties_changed(&self) {
         if let Some(connection) = &self.connection {
             let mut changed: HashMap<String, Value<'_>> = HashMap::new();
-            changed.insert("PlaybackStatus".to_string(), Value::from(match self.playback_state {
-                PlaybackState::Playing => "Playing",
-                PlaybackState::Paused => "Paused",
-                PlaybackState::Stopped | PlaybackState::Buffering => "Stopped",
-            }));
+            changed.insert(
+                "PlaybackStatus".to_string(),
+                Value::from(match self.playback_state {
+                    PlaybackState::Playing => "Playing",
+                    PlaybackState::Paused => "Paused",
+                    PlaybackState::Stopped | PlaybackState::Buffering => "Stopped",
+                }),
+            );
             changed.insert("Volume".to_string(), Value::from(self.volume / 100.0));
-            let _ = connection.emit_signal(
-                None::<&str>,
-                "/org/mpris/MediaPlayer2",
-                "org.freedesktop.DBus.Properties",
-                "PropertiesChanged",
-                &("org.mpris.MediaPlayer2.Player", changed, vec!["Metadata"]),
-            ).await;
+            let _ = connection
+                .emit_signal(
+                    None::<&str>,
+                    "/org/mpris/MediaPlayer2",
+                    "org.freedesktop.DBus.Properties",
+                    "PropertiesChanged",
+                    &("org.mpris.MediaPlayer2.Player", changed, vec!["Metadata"]),
+                )
+                .await;
         }
     }
 }

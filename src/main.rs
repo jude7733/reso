@@ -59,7 +59,11 @@ async fn main() -> anyhow::Result<()> {
 
         Some(Commands::Export(args)) => {
             integration::playlist::export_playlist(&args.path, &config_manager.catalog)?;
-            println!("Exported {} stations to {}", config_manager.catalog.stations.len(), args.path.display());
+            println!(
+                "Exported {} stations to {}",
+                config_manager.catalog.stations.len(),
+                args.path.display()
+            );
         }
 
         Some(Commands::Play(args)) => {
@@ -156,19 +160,71 @@ fn handle_config_command(config_manager: &ConfigManager) {
     let config = &config_manager.config;
     println!("Reso effective configuration");
     println!("Config directory:             {}", directory.display());
-    println!("Configuration file:           {}", directory.join("config.toml").display());
-    println!("Station catalog:              {}", directory.join("stations.toml").display());
-    println!("Liked tracks:                 {}", directory.join("liked_tracks.toml").display());
-    println!("MPV IPC socket:               {}", config.socket_path.display());
-    println!("Recording directory:          {}", config.record_dir.display());
-    println!("Configured stations:          {}", config_manager.catalog.stations.len());
-    println!("Default station:               {}", config.default_station_id.as_deref().unwrap_or("(none)"));
+    println!(
+        "Configuration file:           {}",
+        directory.join("config.toml").display()
+    );
+    println!(
+        "Station catalog:              {}",
+        directory.join("stations.toml").display()
+    );
+    println!(
+        "Liked tracks:                 {}",
+        directory.join("liked_tracks.toml").display()
+    );
+    println!(
+        "MPV IPC socket:               {}",
+        config.socket_path.display()
+    );
+    println!(
+        "Recording directory:          {}",
+        config.record_dir.display()
+    );
+    println!(
+        "Configured stations:          {}",
+        config_manager.catalog.stations.len()
+    );
+    println!(
+        "Default station:               {}",
+        config.default_station_id.as_deref().unwrap_or("(none)")
+    );
     println!("UI theme:                      {}", config.ui.theme);
-    println!("Desktop notifications:         {}", if config.notifications.enabled { "enabled" } else { "disabled" });
-    println!("Automatic stream reconnect:    {}", if config.reconnect_streams { "enabled" } else { "disabled" });
-    println!("Reconnect maximum delay:       {} seconds", config.reconnect_max_delay_secs);
-    println!("Last.fm scrobbling:            {}", if config.lastfm.enabled { "enabled" } else { "disabled" });
-    println!("ListenBrainz scrobbling:       {}", if config.listenbrainz.enabled { "enabled" } else { "disabled" });
+    println!(
+        "Desktop notifications:         {}",
+        if config.notifications.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "Automatic stream reconnect:    {}",
+        if config.reconnect_streams {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "Reconnect maximum delay:       {} seconds",
+        config.reconnect_max_delay_secs
+    );
+    println!(
+        "Last.fm scrobbling:            {}",
+        if config.lastfm.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "ListenBrainz scrobbling:       {}",
+        if config.listenbrainz.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
 }
 
 fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Path) -> Result<()> {
@@ -186,7 +242,10 @@ async fn get_mpv_client(
     tokio::sync::broadcast::Receiver<events::MpvEvent>,
 )> {
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
+        .with_reconnect_policy(
+            config_manager.config.reconnect_streams,
+            config_manager.config.reconnect_max_delay_secs,
+        );
     mpv_proc.ensure_running().await?;
     mpv_proc.disown();
     MpvClient::connect(config_manager.config.socket_path.clone()).await
@@ -874,7 +933,10 @@ fn handle_volume_command(action: &str) -> Result<()> {
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     println!("Launching Reso background daemon (MPV + MPRIS2)...");
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
+        .with_reconnect_policy(
+            config_manager.config.reconnect_streams,
+            config_manager.config.reconnect_max_delay_secs,
+        );
     mpv_proc.ensure_running().await?;
 
     let (client, mut mpv_rx) = get_mpv_client(&config_manager).await?;

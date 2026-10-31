@@ -246,7 +246,10 @@ impl MpvClient {
                                 current_state = PlaybackState::Stopped;
                                 let _ = event_tx_clone.send(MpvEvent::State(current_state));
                                 if let Some(Value::Object(data)) = resp.data {
-                                    let reason = data.get("reason").and_then(Value::as_str).unwrap_or_default();
+                                    let reason = data
+                                        .get("reason")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or_default();
                                     if reason == "error" {
                                         let message = data
                                             .get("file_error")

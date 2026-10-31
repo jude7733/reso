@@ -335,6 +335,8 @@ Reso supports dynamic wallpaper color theming via [pywal](https://github.com/dyl
 
 Set `theme = "wal"` in `~/.config/reso/config.toml`:
 
+Built-in themes include `audiophile_dark`, `cyberpunk`, `monochrome`, and `high_contrast`. The high-contrast preset uses a black background with bright foreground, accent, and status colors.
+
 ```toml
 [ui]
 theme = "wal"                  # Reads ~/.cache/wal/colors.json directly

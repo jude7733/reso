@@ -1,5 +1,6 @@
 //! Album cover art loader and terminal graphics renderer.
 
+use md5::Digest;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -7,7 +8,6 @@ use ratatui::widgets::StatefulWidget;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::StatefulImage;
-use md5::Digest;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
@@ -24,12 +24,16 @@ pub fn cache_artwork(image_bytes: &[u8]) -> Option<String> {
         _ => return None,
     };
     image::load_from_memory_with_format(image_bytes, format).ok()?;
-    let cache_dir = directories::BaseDirs::new()?.cache_dir().join("reso/covers");
+    let cache_dir = directories::BaseDirs::new()?
+        .cache_dir()
+        .join("reso/covers");
     fs::create_dir_all(&cache_dir).ok()?;
     let digest = format!("{:x}", md5::Md5::digest(image_bytes));
     let path = cache_dir.join(format!("{digest}.{extension}"));
     fs::write(&path, image_bytes).ok()?;
-    reqwest::Url::from_file_path(path).ok().map(|url| url.to_string())
+    reqwest::Url::from_file_path(path)
+        .ok()
+        .map(|url| url.to_string())
 }
 
 /// Unicode vinyl disc placeholder when image is loading or unavailable.
@@ -123,11 +127,8 @@ impl CoverArtManager {
     pub fn new() -> Self {
         let mut picker = Picker::from_query_stdio().ok();
         let app_icon = picker.as_mut().and_then(|p| {
-            Self::find_app_icon_path().and_then(|path| {
-                image::open(path)
-                    .ok()
-                    .map(|img| p.new_resize_protocol(img))
-            })
+            Self::find_app_icon_path()
+                .and_then(|path| image::open(path).ok().map(|img| p.new_resize_protocol(img)))
         });
         Self {
             picker,

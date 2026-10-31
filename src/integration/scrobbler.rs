@@ -318,9 +318,23 @@ pub fn is_scrobbleable(artist: &str, title: &str) -> bool {
 
     // Exact matches for single-word commercials or station IDs
     const EXACT_GARBAGE: &[&str] = &[
-        "ad", "ads", "advert", "adverts", "commercial", "commercials",
-        "promo", "promos", "sponsor", "sponsors", "jingle", "jingles",
-        "station id", "radio", "reso", "unknown", "offline",
+        "ad",
+        "ads",
+        "advert",
+        "adverts",
+        "commercial",
+        "commercials",
+        "promo",
+        "promos",
+        "sponsor",
+        "sponsors",
+        "jingle",
+        "jingles",
+        "station id",
+        "radio",
+        "reso",
+        "unknown",
+        "offline",
     ];
 
     for exact in EXACT_GARBAGE {
@@ -403,7 +417,7 @@ mod tests {
         assert!(!is_scrobbleable("Radio", "Advertisement"));
         assert!(!is_scrobbleable("Ad", "Promo"));
         assert!(!is_scrobbleable("Sponsor", "Sponsored by Reso"));
-        
+
         // Station Identifiers & Jingle
         assert!(!is_scrobbleable("Radio Paradise", "Station ID"));
         assert!(!is_scrobbleable("BBC Radio", "Station Jingle"));
@@ -444,5 +458,3 @@ mod tests {
         assert_eq!(calculate_scrobble_threshold(Some(60)), 30);
     }
 }
-
-
