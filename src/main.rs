@@ -835,28 +835,68 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
     mpv_proc.ensure_running().await?;
 
-    let (client, _) = get_mpv_client(&config_manager).await?;
+    let (client, mut mpv_rx) = get_mpv_client(&config_manager).await?;
     let (action_tx, mut action_rx) = mpsc::channel::<events::AppAction>(64);
-    let _mpris = start_mpris_server(action_tx).await?;
+    let mpris = start_mpris_server(action_tx).await?;
 
     println!("✓ Reso daemon active. MPRIS2 interface exposed on D-Bus.");
     println!("Press Ctrl+C to terminate daemon.");
 
-    let client_clone = client.clone();
+    let mut current_station_index = None;
     tokio::select! {
         _ = signal::ctrl_c() => {
             println!("\nDaemon stopping.");
         }
         _ = async {
-            while let Some(action) = action_rx.recv().await {
-                match action {
-                    events::AppAction::Play(st) => { let _ = client_clone.load_file(&st.url).await; }
-                    events::AppAction::Pause => { let _ = client_clone.pause().await; }
-                    events::AppAction::Resume => { let _ = client_clone.resume().await; }
-                    events::AppAction::TogglePause => { let _ = client_clone.toggle_pause().await; }
-                    events::AppAction::Stop => { let _ = client_clone.stop().await; }
-                    events::AppAction::Quit => { break; }
-                    _ => {}
+            loop {
+                tokio::select! {
+                    Some(action) = action_rx.recv() => match action {
+                        events::AppAction::Play(st) => {
+                            let _ = client.load_file(&st.url).await;
+                            current_station_index = config_manager.catalog.stations.iter().position(|station| station.id == st.id);
+                            let mut state = mpris.lock().await;
+                            state.station_name = st.name;
+                            state.track_metadata = events::TrackMetadata::default();
+                        }
+                        events::AppAction::Pause => { let _ = client.pause().await; }
+                        events::AppAction::Resume => { let _ = client.resume().await; }
+                        events::AppAction::TogglePause => { let _ = client.toggle_pause().await; }
+                        events::AppAction::Stop => { let _ = client.stop().await; }
+                        events::AppAction::SetVolume(volume) => {
+                            let normalized = (volume / 100.0).clamp(0.0, 1.5);
+                            let _ = Command::new("wpctl").args(["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{normalized:.2}")]).output();
+                        }
+                        action @ (events::AppAction::NextStation | events::AppAction::PrevStation) => {
+                            let stations = &config_manager.catalog.stations;
+                            if !stations.is_empty() {
+                                let index = match (current_station_index, action) {
+                                    (Some(current), events::AppAction::NextStation) => (current + 1) % stations.len(),
+                                    (Some(current), events::AppAction::PrevStation) => current.checked_sub(1).unwrap_or(stations.len() - 1),
+                                    (_, events::AppAction::NextStation) => 0,
+                                    (_, events::AppAction::PrevStation) => stations.len() - 1,
+                                    _ => unreachable!(),
+                                };
+                                let station = &stations[index];
+                                let _ = client.load_file(&station.url).await;
+                                current_station_index = Some(index);
+                                let mut state = mpris.lock().await;
+                                state.station_name = station.name.clone();
+                                state.track_metadata = events::TrackMetadata::default();
+                            }
+                        }
+                        events::AppAction::Quit => break,
+                        _ => {}
+                    },
+                    Ok(event) = mpv_rx.recv() => {
+                        let mut state = mpris.lock().await;
+                        match event {
+                            events::MpvEvent::State(playback) => state.playback_state = playback,
+                            events::MpvEvent::Metadata(metadata) => state.track_metadata = metadata,
+                            events::MpvEvent::Volume(volume) => state.volume = volume,
+                            _ => {}
+                        }
+                    }
+                    else => break,
                 }
             }
         } => {}
