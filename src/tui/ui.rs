@@ -62,13 +62,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
 /// Renders the top header bar with title, tabs, and status badges.
 fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
+    let compact = area.width < 100;
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(13), // Logo & App Name (reso.png Icon + RESO)
-            Constraint::Min(45),    // Navigation Tabs
-            Constraint::Length(35), // Status & Bit-Perfect Badges
-        ])
+        .constraints(if compact {
+            [Constraint::Length(8), Constraint::Min(0), Constraint::Length(0)]
+        } else {
+            [Constraint::Length(13), Constraint::Min(45), Constraint::Length(35)]
+        })
         .split(area);
 
     // 1. Logo Block with embedded assets/reso.png icon
@@ -79,7 +80,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     let inner_logo = logo_block.inner(chunks[0]);
     f.render_widget(logo_block, chunks[0]);
 
-    if inner_logo.width >= 6 && inner_logo.height >= 1 {
+    if !compact && inner_logo.width >= 6 && inner_logo.height >= 1 {
         let icon_rect = Rect {
             x: inner_logo.x + 1,
             y: inner_logo.y,
@@ -109,13 +110,23 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // 2. Navigation Tabs
-    let tab_items = [
-        ("1:Stations", ActiveTab::Stations),
-        ("2:Search", ActiveTab::Search),
-        ("3:Inspector", ActiveTab::Inspector),
-        ("4:Liked", ActiveTab::Liked),
-        ("5:Settings", ActiveTab::Settings),
-    ];
+    let tab_items = if compact {
+        vec![
+            ("1:Stn", ActiveTab::Stations),
+            ("2:Find", ActiveTab::Search),
+            ("3:Info", ActiveTab::Inspector),
+            ("4:Like", ActiveTab::Liked),
+            ("5:Cfg", ActiveTab::Settings),
+        ]
+    } else {
+        vec![
+            ("1:Stations", ActiveTab::Stations),
+            ("2:Search", ActiveTab::Search),
+            ("3:Inspector", ActiveTab::Inspector),
+            ("4:Liked", ActiveTab::Liked),
+            ("5:Settings", ActiveTab::Settings),
+        ]
+    };
     let tab_spans: Vec<Span> = tab_items
         .iter()
         .flat_map(|(name, tab)| {
@@ -245,20 +256,26 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(badge_border_color)),
         );
-    f.render_widget(badges_widget, chunks[2]);
+    if !compact {
+        f.render_widget(badges_widget, chunks[2]);
+    }
 }
 
 /// Renders the main dashboard body depending on the active tab.
 fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
     match app.active_tab {
         ActiveTab::Stations => {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(42), // Stations List
-                    Constraint::Percentage(58), // Now Playing + Compact Audiophile Path
-                ])
-                .split(area);
+            let chunks = if area.width < 100 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                    .split(area)
+            } else {
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+                    .split(area)
+            };
 
             render_stations_list(f, app, chunks[0]);
             render_right_pane(f, app, chunks[1]);
