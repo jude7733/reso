@@ -857,6 +857,7 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                             let mut state = mpris.lock().await;
                             state.station_name = st.name;
                             state.track_metadata = events::TrackMetadata::default();
+                            state.emit_properties_changed().await;
                         }
                         events::AppAction::Pause => { let _ = client.pause().await; }
                         events::AppAction::Resume => { let _ = client.resume().await; }
@@ -882,6 +883,7 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                                 let mut state = mpris.lock().await;
                                 state.station_name = station.name.clone();
                                 state.track_metadata = events::TrackMetadata::default();
+                                state.emit_properties_changed().await;
                             }
                         }
                         events::AppAction::Quit => break,
@@ -890,9 +892,48 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                     Ok(event) = mpv_rx.recv() => {
                         let mut state = mpris.lock().await;
                         match event {
-                            events::MpvEvent::State(playback) => state.playback_state = playback,
-                            events::MpvEvent::Metadata(metadata) => state.track_metadata = metadata,
-                            events::MpvEvent::Volume(volume) => state.volume = volume,
+                            events::MpvEvent::State(playback) => {
+                                state.playback_state = playback;
+                                state.emit_properties_changed().await;
+                            }
+                            events::MpvEvent::Metadata(metadata) => {
+                                let changed = state.track_metadata.display_name() != metadata.display_name();
+                                let station = state.station_name.clone();
+                                state.track_metadata = metadata.clone();
+                                state.emit_properties_changed().await;
+                                drop(state);
+                                if changed && config_manager.config.notifications.enabled
+                                    && config_manager.config.notifications.track_changes
+                                    && (metadata.title.is_some() || metadata.raw_title.is_some())
+                                {
+                                    let summary = format!("Now playing on {station}");
+                                    let body = metadata.display_name();
+                                    if let Err(error) = integration::notifications::notify(&summary, &body).await {
+                                        eprintln!("Desktop notification unavailable: {error}");
+                                    }
+                                }
+                            }
+                            events::MpvEvent::Volume(volume) => {
+                                state.volume = volume;
+                                state.emit_properties_changed().await;
+                            }
+                            events::MpvEvent::Error(error) => {
+                                drop(state);
+                                if config_manager.config.notifications.enabled && config_manager.config.notifications.errors {
+                                    if let Err(error) = integration::notifications::notify("Reso playback error", &error).await {
+                                        eprintln!("Desktop notification unavailable: {error}");
+                                    }
+                                }
+                            }
+                            events::MpvEvent::RecordingState { is_recording, .. } => {
+                                drop(state);
+                                if config_manager.config.notifications.enabled && config_manager.config.notifications.recording {
+                                    let title = if is_recording { "Recording started" } else { "Recording saved" };
+                                    if let Err(error) = integration::notifications::notify(title, "Reso radio stream").await {
+                                        eprintln!("Desktop notification unavailable: {error}");
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                     }

@@ -15,6 +15,28 @@ pub struct MprisState {
     pub station_name: String,
     pub volume: f64,
     pub action_tx: mpsc::Sender<AppAction>,
+    pub connection: Option<zbus::Connection>,
+}
+
+impl MprisState {
+    pub async fn emit_properties_changed(&self) {
+        if let Some(connection) = &self.connection {
+            let mut changed: HashMap<String, Value<'_>> = HashMap::new();
+            changed.insert("PlaybackStatus".to_string(), Value::from(match self.playback_state {
+                PlaybackState::Playing => "Playing",
+                PlaybackState::Paused => "Paused",
+                PlaybackState::Stopped | PlaybackState::Buffering => "Stopped",
+            }));
+            changed.insert("Volume".to_string(), Value::from(self.volume / 100.0));
+            let _ = connection.emit_signal(
+                None::<&str>,
+                "/org/mpris/MediaPlayer2",
+                "org.freedesktop.DBus.Properties",
+                "PropertiesChanged",
+                &("org.mpris.MediaPlayer2.Player", changed, vec!["Metadata"]),
+            ).await;
+        }
+    }
 }
 
 /// D-Bus interface for root `org.mpris.MediaPlayer2`.
@@ -240,10 +262,12 @@ pub async fn start_mpris_server(
         station_name: "Reso Radio".to_string(),
         volume: 100.0,
         action_tx,
+        connection: None,
     }));
 
     let root_iface = ResoMprisRoot::new(state.clone());
     let player_iface = ResoMprisPlayer::new(state.clone());
+    let server_state = state.clone();
 
     tokio::spawn(async move {
         if let Ok(connection) = zbus::connection::Builder::session() {
@@ -251,6 +275,7 @@ pub async fn start_mpris_server(
                 if let Ok(builder) = builder.serve_at("/org/mpris/MediaPlayer2", root_iface) {
                     if let Ok(builder) = builder.serve_at("/org/mpris/MediaPlayer2", player_iface) {
                         if let Ok(conn) = builder.build().await {
+                            server_state.lock().await.connection = Some(conn.clone());
                             // Keep connection alive
                             let _ = std::future::pending::<()>().await;
                             drop(conn);

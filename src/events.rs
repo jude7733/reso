@@ -100,5 +100,6 @@ pub enum AppAction {
         cover_bytes: Option<Vec<u8>>,
     },
     RpPollFinished,
+    NotificationFailed(String),
     Quit,
 }

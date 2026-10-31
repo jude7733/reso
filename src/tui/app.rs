@@ -67,6 +67,7 @@ pub struct SettingsState {
     pub default_station_id: String,
     pub record_dir: String,
     pub socket_path: String,
+    pub notifications_enabled: bool,
 
     // Scrobbling
     pub lastfm_enabled: bool,
@@ -98,6 +99,7 @@ impl SettingsState {
                 .unwrap_or_else(|| "rp-main".to_string()),
             record_dir: config.record_dir.to_string_lossy().to_string(),
             socket_path: config.socket_path.to_string_lossy().to_string(),
+            notifications_enabled: config.notifications.enabled,
 
             lastfm_enabled: config.lastfm.enabled,
             lastfm_username: config.lastfm.username.clone().unwrap_or_default(),
@@ -113,7 +115,7 @@ impl SettingsState {
     pub fn fields_count(&self) -> usize {
         match self.selected_section {
             0 => 4, // Theme, Visualizer, Sort Mode, Cover Mode
-            1 => 3, // Default Station, Record Dir, Socket Path
+            1 => 4, // Default Station, Record Dir, Socket Path, Notifications
             2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
             3 => 1, // Save Settings Button
             _ => 1,
@@ -349,6 +351,7 @@ pub struct App {
 
     pub toast: Option<ToastNotification>,
     pub track_started_at: Option<std::time::Instant>,
+    last_notified_track: Option<String>,
     pub settings_state: SettingsState,
     pub theme: Theme,
     pub theme_last_mtime: Option<std::time::SystemTime>,
@@ -452,6 +455,7 @@ impl App {
             rp_poll_in_flight: false,
             toast: None,
             track_started_at: None,
+            last_notified_track: None,
             settings_state,
             theme,
             theme_last_mtime,
@@ -608,6 +612,7 @@ impl App {
             };
         self.config_manager.config.record_dir = PathBuf::from(&s.record_dir);
         self.config_manager.config.socket_path = PathBuf::from(&s.socket_path);
+        self.config_manager.config.notifications.enabled = s.notifications_enabled;
 
         self.config_manager.config.lastfm.enabled = s.lastfm_enabled;
         self.config_manager.config.lastfm.username = if s.lastfm_username.trim().is_empty() {
@@ -2006,6 +2011,13 @@ impl App {
                             self.settings_state.socket_path.clone();
                         self.settings_state.is_editing_text = true;
                     }
+                    3 => {
+                        self.settings_state.notifications_enabled = !self.settings_state.notifications_enabled;
+                        self.show_toast(
+                            format!("Desktop notifications {}", if self.settings_state.notifications_enabled { "enabled" } else { "disabled" }),
+                            ToastLevel::Info,
+                        );
+                    }
                     _ => {}
                 },
                 2 => match self.settings_state.selected_field {
@@ -2164,8 +2176,29 @@ impl App {
                 self.update_mpris();
             }
             MpvEvent::Metadata(m) => {
-                if self.track_metadata.title != m.title || self.track_metadata.raw_title != m.raw_title {
+                let changed = self.track_metadata.title != m.title
+                    || self.track_metadata.raw_title != m.raw_title
+                    || self.track_metadata.artist != m.artist;
+                if changed {
                     self.track_started_at = Some(std::time::Instant::now());
+                    if self.config_manager.config.notifications.enabled
+                        && self.config_manager.config.notifications.track_changes
+                        && (m.title.is_some() || m.raw_title.is_some())
+                    {
+                        let station = self.current_station.as_ref().map(|station| station.name.as_str()).unwrap_or("Reso");
+                        let body = m.display_name();
+                        let notification_key = format!("{station}\0{body}");
+                        if self.last_notified_track.as_deref() != Some(&notification_key) {
+                            self.last_notified_track = Some(notification_key);
+                            let summary = format!("Now playing on {station}");
+                            let action_tx = self.action_tx.clone();
+                            tokio::spawn(async move {
+                                if let Err(error) = crate::integration::notifications::notify(&summary, &body).await {
+                                    let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                                }
+                            });
+                        }
+                    }
                 }
                 self.track_metadata = m.clone();
                 self.scrobbler.on_track_change(m.clone()).await;
@@ -2221,8 +2254,32 @@ impl App {
             MpvEvent::RecordingState { is_recording, path } => {
                 self.is_recording = is_recording;
                 self.active_recording_path = path;
+                if self.config_manager.config.notifications.enabled
+                    && self.config_manager.config.notifications.recording
+                {
+                    let summary = if is_recording { "Recording started" } else { "Recording saved" };
+                    let station = self.current_station.as_ref().map(|station| station.name.as_str()).unwrap_or("Current stream");
+                    let body = format!("{station}");
+                    let action_tx = self.action_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = crate::integration::notifications::notify(summary, &body).await {
+                            let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                        }
+                    });
+                }
             }
-            MpvEvent::Error(_err) => {}
+            MpvEvent::Error(error) => {
+                if self.config_manager.config.notifications.enabled
+                    && self.config_manager.config.notifications.errors
+                {
+                    let action_tx = self.action_tx.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = crate::integration::notifications::notify("Reso playback error", &error).await {
+                            let _ = action_tx.send(AppAction::NotificationFailed(error.to_string())).await;
+                        }
+                    });
+                }
+            }
         }
     }
 
@@ -2283,6 +2340,7 @@ impl App {
                 lock.track_metadata = meta;
                 lock.station_name = st_name;
                 lock.volume = vol;
+                lock.emit_properties_changed().await;
             });
         }
     }

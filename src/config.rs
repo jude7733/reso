@@ -35,6 +35,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub listenbrainz: ListenBrainzConfig,
 
+    #[serde(default)]
+    pub notifications: DesktopNotificationsConfig,
+
     /// Default station ID to play on launch if none specified.
     pub default_station_id: Option<String>,
 }
@@ -47,8 +50,27 @@ impl Default for AppConfig {
             ui: UiConfig::default(),
             lastfm: LastFmConfig::default(),
             listenbrainz: ListenBrainzConfig::default(),
+            notifications: DesktopNotificationsConfig::default(),
             default_station_id: Some("rp-main".to_string()),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesktopNotificationsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub track_changes: bool,
+    #[serde(default = "default_true")]
+    pub errors: bool,
+    #[serde(default)]
+    pub recording: bool,
+}
+
+impl Default for DesktopNotificationsConfig {
+    fn default() -> Self {
+        Self { enabled: true, track_changes: true, errors: true, recording: false }
     }
 }
 

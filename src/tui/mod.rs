@@ -266,6 +266,9 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::RpPollFinished => {
                         app.rp_poll_in_flight = false;
                     }
+                    AppAction::NotificationFailed(message) => {
+                        app.show_toast(message, crate::tui::app::ToastLevel::Warning);
+                    }
                     AppAction::Quit => {
                         app.should_quit = true;
                     }

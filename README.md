@@ -296,6 +296,16 @@ All user configuration, catalogs, and logs reside in standard XDG paths:
 - `~/.config/reso/liked_tracks.md`: Appended log of bookmarked tracks with timestamps, station metadata, and audio formats.
 - `~/Music/Radio/`: Default destination directory for lossless stream recordings (`.flac`).
 
+Desktop notifications use the session D-Bus notification service and are optional. Configure them in `~/.config/reso/config.toml`:
+
+```toml
+[notifications]
+enabled = true
+track_changes = true
+errors = true
+recording = false
+```
+
 ---
 
 ## Pywal-16 Dynamic Theming Integration

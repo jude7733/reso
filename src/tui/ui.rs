@@ -2473,6 +2473,15 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(format!("\"{}\"", val2), if sel2 && s.is_editing_text { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Cyan) }),
                 Span::styled(" (Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
+            form_lines.push(Line::raw(""));
+            let sel3 = s.selected_field == 3;
+            let (notify_check, notify_color) = if s.notifications_enabled { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel3 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Desktop Notifications:       ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(notify_check, Style::default().fg(notify_color).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
         }
         2 => {
             // Scrobbler Services
