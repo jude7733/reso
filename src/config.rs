@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 /// Application settings loaded from `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     /// MPV Unix domain socket path.
     #[serde(default = "default_socket_path")]
@@ -61,6 +62,31 @@ impl Default for AppConfig {
             reconnect_max_delay_secs: default_reconnect_delay(),
             default_station_id: Some("rp-main".to_string()),
         }
+    }
+}
+
+impl AppConfig {
+    pub fn validate(&self) -> Result<()> {
+        if self.reconnect_max_delay_secs == 0 || self.reconnect_max_delay_secs > 300 {
+            return Err(ResoError::Config(
+                "reconnect_max_delay_secs must be between 1 and 300".to_string(),
+            ));
+        }
+        if self.socket_path.as_os_str().is_empty() {
+            return Err(ResoError::Config("socket_path cannot be empty".to_string()));
+        }
+        if self.record_dir.as_os_str().is_empty() {
+            return Err(ResoError::Config("record_dir cannot be empty".to_string()));
+        }
+        let valid_themes = ["audiophile_dark", "cyberpunk", "monochrome", "wal"];
+        if !valid_themes.contains(&self.ui.theme.as_str()) {
+            return Err(ResoError::Config(format!("unsupported UI theme: {}", self.ui.theme)));
+        }
+        let valid_cover_modes = ["auto", "kitty", "sixel", "halfblocks", "off"];
+        if !valid_cover_modes.contains(&self.ui.cover_mode.as_str()) {
+            return Err(ResoError::Config(format!("unsupported cover mode: {}", self.ui.cover_mode)));
+        }
+        Ok(())
     }
 }
 
@@ -503,13 +529,16 @@ impl ConfigManager {
         let config_file = dir.join("config.toml");
         let config = if config_file.exists() {
             let content = fs::read_to_string(&config_file)?;
-            toml::from_str(&content).unwrap_or_default()
+            toml::from_str::<AppConfig>(&content).map_err(|error| {
+                ResoError::Config(format!("{} is invalid: {error}", config_file.display()))
+            })?
         } else {
             let default_cfg = AppConfig::default();
             let content = toml::to_string_pretty(&default_cfg).map_err(ResoError::TomlSer)?;
             fs::write(&config_file, content)?;
             default_cfg
         };
+        config.validate()?;
 
         // 2. Stations Playlist Catalog (`stations.toml`)
         let stations_file = dir.join("stations.toml");
