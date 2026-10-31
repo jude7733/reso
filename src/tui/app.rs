@@ -60,6 +60,7 @@ pub struct SettingsState {
     // UI Preferences
     pub theme: String,
     pub show_visualizer: bool,
+    pub reduced_motion: bool,
     pub default_sort_mode: String,
     pub cover_mode: String,
 
@@ -92,6 +93,7 @@ impl SettingsState {
 
             theme: config.ui.theme.clone(),
             show_visualizer: config.ui.show_visualizer,
+            reduced_motion: config.ui.reduced_motion,
             default_sort_mode: config.ui.default_sort_mode.clone(),
             cover_mode: config.ui.cover_mode.clone(),
 
@@ -118,7 +120,7 @@ impl SettingsState {
 
     pub fn fields_count(&self) -> usize {
         match self.selected_section {
-            0 => 4, // Theme, Visualizer, Sort Mode, Cover Mode
+            0 => 5, // Theme, Visualizer, Sort Mode, Cover Mode, Reduced Motion
             1 => 6, // Default Station, Record Dir, Socket Path, Notifications, Reconnect, Reconnect Delay
             2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
             3 => 1, // Save Settings Button
@@ -604,6 +606,7 @@ impl App {
         self.config_manager.config.ui.theme = s.theme.clone();
         self.reload_theme();
         self.config_manager.config.ui.show_visualizer = s.show_visualizer;
+        self.config_manager.config.ui.reduced_motion = s.reduced_motion;
         self.config_manager.config.ui.default_sort_mode = s.default_sort_mode.clone();
         self.config_manager.config.ui.cover_mode = s.cover_mode.clone();
 
@@ -2015,6 +2018,20 @@ impl App {
                             ToastLevel::Info,
                         );
                     }
+                    4 => {
+                        self.settings_state.reduced_motion = !self.settings_state.reduced_motion;
+                        self.show_toast(
+                            format!(
+                                "Reduced motion {}",
+                                if self.settings_state.reduced_motion {
+                                    "enabled"
+                                } else {
+                                    "disabled"
+                                }
+                            ),
+                            ToastLevel::Info,
+                        );
+                    }
                     _ => {}
                 },
                 1 => match self.settings_state.selected_field {
@@ -2439,7 +2456,9 @@ impl App {
 
         // Advance visualizer state
         self.visualizer_state.show_visualizer = self.config_manager.config.ui.show_visualizer;
-        self.visualizer_state.tick();
+        if !self.config_manager.config.ui.reduced_motion || self.tick_count % 4 == 0 {
+            self.visualizer_state.tick();
+        }
 
         // Check scrobble threshold
         self.scrobbler.tick().await;

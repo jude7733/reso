@@ -2675,6 +2675,36 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                     Style::default().fg(Color::DarkGray),
                 ),
             ]));
+            form_lines.push(Line::raw(""));
+            let sel4 = s.selected_field == 4;
+            let (motion_check, motion_color) = if s.reduced_motion {
+                ("[✓ Enabled]", Color::Green)
+            } else {
+                ("[✗ Disabled]", Color::DarkGray)
+            };
+            form_lines.push(Line::from(vec![
+                Span::styled(
+                    if sel4 { "▶ " } else { "  " },
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    "Reduced Visualizer Motion:   ",
+                    if sel4 {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    },
+                ),
+                Span::styled(
+                    motion_check,
+                    Style::default()
+                        .fg(motion_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
         }
         1 => {
             // Playback & General
