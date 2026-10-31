@@ -4,6 +4,7 @@ pub mod api;
 pub mod clipboard;
 pub mod mpris;
 pub mod notifications;
+pub mod playlist;
 pub mod prober;
 pub mod scrobbler;
 

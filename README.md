@@ -180,6 +180,8 @@ systemctl --user restart pipewire wireplumber
 | :--- | :--- | :--- |
 | `reso` | Launch interactive full-screen TUI dashboard (default) | `reso` |
 | `reso list` | List all configured stations | `reso list --favorites` |
+| `reso import <file.m3u|file.pls>` | Import and merge stations from a playlist | `reso import favorites.m3u` |
+| `reso export <file.m3u|file.pls>` | Export the configured station catalog | `reso export stations.pls` |
 | `reso play <id/name/url>` | Play a station with optional sleep timer | `reso play rp-main --sleep 45m` |
 | `reso pause` / `resume` / `toggle` | Control active playback state | `reso toggle` |
 | `reso stop` | Stop active playback | `reso stop` |

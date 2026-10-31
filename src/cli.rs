@@ -28,6 +28,12 @@ pub enum Commands {
     /// Delete a radio station from the catalog.
     Delete(DeleteArgs),
 
+    /// Import stations from an M3U or PLS playlist.
+    Import(PlaylistArgs),
+
+    /// Export stations to an M3U or PLS playlist.
+    Export(PlaylistArgs),
+
     /// Play a station by ID, name, or URL.
     Play(PlayArgs),
 
@@ -75,6 +81,12 @@ pub enum Commands {
 
     /// Run in background headless daemon mode (MPV IPC + MPRIS2 D-Bus).
     Daemon,
+}
+
+#[derive(Args, Debug)]
+pub struct PlaylistArgs {
+    /// Playlist file path; the .m3u or .pls extension selects the format.
+    pub path: std::path::PathBuf,
 }
 
 #[derive(Args, Debug)]

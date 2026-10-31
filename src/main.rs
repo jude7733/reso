@@ -53,6 +53,15 @@ async fn main() -> anyhow::Result<()> {
             handle_delete_command(config_manager, args.station)?;
         }
 
+        Some(Commands::Import(args)) => {
+            handle_import_command(config_manager, &args.path)?;
+        }
+
+        Some(Commands::Export(args)) => {
+            integration::playlist::export_playlist(&args.path, &config_manager.catalog)?;
+            println!("Exported {} stations to {}", config_manager.catalog.stations.len(), args.path.display());
+        }
+
         Some(Commands::Play(args)) => {
             handle_play_command(config_manager, args.station, args.sleep, args.foreground).await?;
         }
@@ -135,6 +144,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Path) -> Result<()> {
+    let count = integration::playlist::import_playlist(path, &mut config_manager.catalog)?;
+    config_manager.save_stations()?;
+    println!("Imported {count} stations from {}", path.display());
     Ok(())
 }
 
