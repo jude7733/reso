@@ -267,6 +267,19 @@ Run `reso inspect` at any time to verify bit-perfect signal flow:
 
 `reso` exposes a full MPRIS2 interface on D-Bus (`org.mpris.MediaPlayer2.reso`).
 
+### Optional systemd user service
+
+The installer places a desktop launcher in the application menu and resolves the installed binary path, including when the desktop session has a restricted `PATH`. For a user-local install, the optional daemon unit can be installed with:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp contrib/reso.service ~/.config/systemd/user/reso.service
+systemctl --user daemon-reload
+systemctl --user enable --now reso.service
+```
+
+Check it with `systemctl --user status reso.service`; disable it with `systemctl --user disable --now reso.service`. The supplied unit targets `~/.local/bin/reso`; edit `ExecStart` if the binary is installed elsewhere. The desktop launcher starts the interactive TUI, while the service exposes MPRIS in the background.
+
 ### Control via `playerctl`
 ```bash
 playerctl --player=reso play-pause

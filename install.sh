@@ -130,7 +130,10 @@ install -m 755 "${RELEASE_BIN}" "${BIN_DIR}/reso"
 log_info "Installing desktop entry to ${APP_DIR}/reso.desktop..."
 install -d -m 755 "${APP_DIR}"
 if [ -f "${SCRIPT_DIR}/reso.desktop" ]; then
-    install -m 644 "${SCRIPT_DIR}/reso.desktop" "${APP_DIR}/reso.desktop"
+    sed -e "s|^Exec=reso$|Exec=${BIN_DIR}/reso|" \
+        -e "s|^TryExec=reso$|TryExec=${BIN_DIR}/reso|" \
+        "${SCRIPT_DIR}/reso.desktop" > "${APP_DIR}/reso.desktop"
+    chmod 644 "${APP_DIR}/reso.desktop"
 fi
 
 # Step 4: Install multi-resolution and scalable application icons
