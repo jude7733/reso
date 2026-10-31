@@ -13,6 +13,8 @@ use tokio::net::UnixStream;
 /// Manages the headless MPV process lifecycle.
 pub struct MpvProcessManager {
     socket_path: PathBuf,
+    reconnect_streams: bool,
+    reconnect_max_delay_secs: u32,
     child: Option<Child>,
     owns_process: Arc<AtomicBool>,
 }
@@ -22,9 +24,17 @@ impl MpvProcessManager {
     pub fn new(socket_path: PathBuf) -> Self {
         Self {
             socket_path,
+            reconnect_streams: true,
+            reconnect_max_delay_secs: 30,
             child: None,
             owns_process: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn with_reconnect_policy(mut self, enabled: bool, max_delay_secs: u32) -> Self {
+        self.reconnect_streams = enabled;
+        self.reconnect_max_delay_secs = max_delay_secs.clamp(1, 300);
+        self
     }
 
     /// Checks if MPV is already running and accepting connections on the socket.
@@ -53,7 +63,8 @@ impl MpvProcessManager {
 
         let socket_arg = format!("--input-ipc-server={}", self.socket_path.display());
 
-        let child = Command::new("mpv")
+        let mut command = Command::new("mpv");
+        command
             .arg("--no-config")
             .arg("--idle")
             .arg(&socket_arg)
@@ -68,7 +79,14 @@ impl MpvProcessManager {
             .arg("--force-seekable=no")
             .arg("--terminal=no")
             .arg("--msg-level=all=no")
-            .stdin(Stdio::null())
+            ;
+        if self.reconnect_streams {
+            command.arg(format!(
+                "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max={}",
+                self.reconnect_max_delay_secs
+            ));
+        }
+        let child = command.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

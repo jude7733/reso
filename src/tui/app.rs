@@ -68,6 +68,8 @@ pub struct SettingsState {
     pub record_dir: String,
     pub socket_path: String,
     pub notifications_enabled: bool,
+    pub reconnect_streams: bool,
+    pub reconnect_max_delay_secs: String,
 
     // Scrobbling
     pub lastfm_enabled: bool,
@@ -100,6 +102,8 @@ impl SettingsState {
             record_dir: config.record_dir.to_string_lossy().to_string(),
             socket_path: config.socket_path.to_string_lossy().to_string(),
             notifications_enabled: config.notifications.enabled,
+            reconnect_streams: config.reconnect_streams,
+            reconnect_max_delay_secs: config.reconnect_max_delay_secs.to_string(),
 
             lastfm_enabled: config.lastfm.enabled,
             lastfm_username: config.lastfm.username.clone().unwrap_or_default(),
@@ -115,7 +119,7 @@ impl SettingsState {
     pub fn fields_count(&self) -> usize {
         match self.selected_section {
             0 => 4, // Theme, Visualizer, Sort Mode, Cover Mode
-            1 => 4, // Default Station, Record Dir, Socket Path, Notifications
+            1 => 6, // Default Station, Record Dir, Socket Path, Notifications, Reconnect, Reconnect Delay
             2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
             3 => 1, // Save Settings Button
             _ => 1,
@@ -613,6 +617,12 @@ impl App {
         self.config_manager.config.record_dir = PathBuf::from(&s.record_dir);
         self.config_manager.config.socket_path = PathBuf::from(&s.socket_path);
         self.config_manager.config.notifications.enabled = s.notifications_enabled;
+        self.config_manager.config.reconnect_streams = s.reconnect_streams;
+        self.config_manager.config.reconnect_max_delay_secs = s
+            .reconnect_max_delay_secs
+            .parse::<u32>()
+            .unwrap_or(30)
+            .clamp(1, 300);
 
         self.config_manager.config.lastfm.enabled = s.lastfm_enabled;
         self.config_manager.config.lastfm.username = if s.lastfm_username.trim().is_empty() {
@@ -2018,6 +2028,14 @@ impl App {
                             ToastLevel::Info,
                         );
                     }
+                    4 => {
+                        self.settings_state.reconnect_streams = !self.settings_state.reconnect_streams;
+                        self.show_toast(format!("Stream reconnect {}", if self.settings_state.reconnect_streams { "enabled" } else { "disabled" }), ToastLevel::Info);
+                    }
+                    5 => {
+                        self.settings_state.text_buffer = self.settings_state.reconnect_max_delay_secs.clone();
+                        self.settings_state.is_editing_text = true;
+                    }
                     _ => {}
                 },
                 2 => match self.settings_state.selected_field {
@@ -2269,6 +2287,7 @@ impl App {
                 }
             }
             MpvEvent::Error(error) => {
+                self.show_toast(format!("Playback error: {error}"), ToastLevel::Error);
                 if self.config_manager.config.notifications.enabled
                     && self.config_manager.config.notifications.errors
                 {

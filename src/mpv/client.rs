@@ -232,6 +232,8 @@ impl MpvClient {
                             }
                             "start-file" => {
                                 is_idle = false;
+                                current_state = PlaybackState::Buffering;
+                                let _ = event_tx_clone.send(MpvEvent::State(current_state));
                             }
                             "playback-restart" => {
                                 is_idle = false;
@@ -243,6 +245,17 @@ impl MpvClient {
                             "end-file" => {
                                 current_state = PlaybackState::Stopped;
                                 let _ = event_tx_clone.send(MpvEvent::State(current_state));
+                                if let Some(Value::Object(data)) = resp.data {
+                                    let reason = data.get("reason").and_then(Value::as_str).unwrap_or_default();
+                                    if reason == "error" {
+                                        let message = data
+                                            .get("file_error")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("MPV could not open the stream")
+                                            .to_string();
+                                        let _ = event_tx_clone.send(MpvEvent::Error(message));
+                                    }
+                                }
                             }
                             _ => {}
                         }

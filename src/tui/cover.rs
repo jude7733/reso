@@ -7,11 +7,30 @@ use ratatui::widgets::StatefulWidget;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::StatefulImage;
+use md5::Digest;
 use std::collections::{HashMap, VecDeque};
+use std::fs;
 use std::path::PathBuf;
 
 /// Maximum number of decoded album covers kept in memory.
 const MAX_CACHE_SIZE: usize = 16;
+
+pub fn cache_artwork(image_bytes: &[u8]) -> Option<String> {
+    let format = image::guess_format(image_bytes).ok()?;
+    let extension = match format {
+        image::ImageFormat::Png => "png",
+        image::ImageFormat::Jpeg => "jpg",
+        image::ImageFormat::WebP => "webp",
+        _ => return None,
+    };
+    image::load_from_memory_with_format(image_bytes, format).ok()?;
+    let cache_dir = directories::BaseDirs::new()?.cache_dir().join("reso/covers");
+    fs::create_dir_all(&cache_dir).ok()?;
+    let digest = format!("{:x}", md5::Md5::digest(image_bytes));
+    let path = cache_dir.join(format!("{digest}.{extension}"));
+    fs::write(&path, image_bytes).ok()?;
+    reqwest::Url::from_file_path(path).ok().map(|url| url.to_string())
+}
 
 /// Unicode vinyl disc placeholder when image is loading or unavailable.
 const VINYL_ART: [&str; 6] = [

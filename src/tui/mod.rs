@@ -36,7 +36,8 @@ use tokio::sync::mpsc;
 /// Runs the interactive TUI application.
 pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     // 1. Ensure MPV headless daemon is running
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
+    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
+        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
     mpv_proc.ensure_running().await?;
 
     // 2. Connect MPV IPC client
@@ -252,15 +253,22 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     }
                     AppAction::CoverArtReady { url, bytes } => {
                         app.cover_art_manager.load_image(&url, &bytes);
-                        app.track_metadata.cover_url = Some(url);
+                        if let Some(art_uri) = crate::tui::cover::cache_artwork(&bytes) {
+                            app.track_metadata.cover_url = Some(art_uri);
+                        }
                         app.update_mpris();
                     }
                     AppAction::RpMetadataReady { metadata, cover_bytes } => {
                         app.rp_poll_in_flight = false;
                         if let (Some(url), Some(bytes)) = (&metadata.cover_url, cover_bytes) {
                             app.cover_art_manager.load_image(url, &bytes);
+                            app.track_metadata = *metadata;
+                            if let Some(art_uri) = crate::tui::cover::cache_artwork(&bytes) {
+                                app.track_metadata.cover_url = Some(art_uri);
+                            }
+                        } else {
+                            app.track_metadata = *metadata;
                         }
-                        app.track_metadata = *metadata;
                         app.update_mpris();
                     }
                     AppAction::RpPollFinished => {

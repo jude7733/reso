@@ -299,6 +299,9 @@ All user configuration, catalogs, and logs reside in standard XDG paths:
 Desktop notifications use the session D-Bus notification service and are optional. Configure them in `~/.config/reso/config.toml`:
 
 ```toml
+reconnect_streams = true
+reconnect_max_delay_secs = 30
+
 [notifications]
 enabled = true
 track_changes = true

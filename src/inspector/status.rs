@@ -29,6 +29,9 @@ pub enum BitPerfectVerdict {
 
     /// Audio pipeline is inactive or idle.
     Idle,
+
+    /// One or more pipeline stages could not be measured.
+    Unverified { missing_stages: Vec<String> },
 }
 
 /// Comprehensive snapshot of all 3 stages in the audio pipeline.
@@ -208,6 +211,20 @@ impl PipelineStatus {
             }
         }
 
+        let mut missing_stages = Vec::new();
+        if self.source_rate == 0 {
+            missing_stages.push("MPV decoder rate".to_string());
+        }
+        if self.pw_sink_rate.is_none() {
+            missing_stages.push("PipeWire sink rate".to_string());
+        }
+        if self.alsa_hw_params.as_ref().and_then(|params| params.rate).is_none() {
+            missing_stages.push("ALSA hardware rate".to_string());
+        }
+        if !missing_stages.is_empty() {
+            return BitPerfectVerdict::Unverified { missing_stages };
+        }
+
         BitPerfectVerdict::NativeBitPerfect
     }
 
@@ -367,6 +384,10 @@ impl PipelineStatus {
                     " PipeWire software filters active: {:?}\n",
                     filters
                 ));
+            }
+            Some(BitPerfectVerdict::Unverified { missing_stages }) => {
+                out.push_str(" STATUS: [ UNKNOWN ] Pipeline could not be fully verified.\n");
+                out.push_str(&format!(" Missing measurements: {}.\n", missing_stages.join(", ")));
             }
             Some(BitPerfectVerdict::Idle) | None => {
                 out.push_str(" STATUS: [ IDLE ] Audio pipeline is currently paused or stopped.\n");

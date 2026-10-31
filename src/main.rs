@@ -145,7 +145,8 @@ async fn get_mpv_client(
     MpvClient,
     tokio::sync::broadcast::Receiver<events::MpvEvent>,
 )> {
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
+    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
+        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
     mpv_proc.ensure_running().await?;
     mpv_proc.disown();
     MpvClient::connect(config_manager.config.socket_path.clone()).await
@@ -832,7 +833,8 @@ fn handle_volume_command(action: &str) -> Result<()> {
 /// Handles `reso daemon`.
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     println!("Launching Reso background daemon (MPV + MPRIS2)...");
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone());
+    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
+        .with_reconnect_policy(config_manager.config.reconnect_streams, config_manager.config.reconnect_max_delay_secs);
     mpv_proc.ensure_running().await?;
 
     let (client, mut mpv_rx) = get_mpv_client(&config_manager).await?;

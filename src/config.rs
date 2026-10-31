@@ -38,6 +38,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub notifications: DesktopNotificationsConfig,
 
+    #[serde(default = "default_true")]
+    pub reconnect_streams: bool,
+
+    #[serde(default = "default_reconnect_delay")]
+    pub reconnect_max_delay_secs: u32,
+
     /// Default station ID to play on launch if none specified.
     pub default_station_id: Option<String>,
 }
@@ -51,9 +57,15 @@ impl Default for AppConfig {
             lastfm: LastFmConfig::default(),
             listenbrainz: ListenBrainzConfig::default(),
             notifications: DesktopNotificationsConfig::default(),
+            reconnect_streams: true,
+            reconnect_max_delay_secs: default_reconnect_delay(),
             default_station_id: Some("rp-main".to_string()),
         }
     }
+}
+
+fn default_reconnect_delay() -> u32 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

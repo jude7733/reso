@@ -1470,6 +1470,17 @@ fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
                 ],
             )
         }
+        Some(BitPerfectVerdict::Unverified { missing_stages }) => {
+            (
+                Color::Yellow,
+                " [? PIPELINE UNVERIFIED] ",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                vec![Line::from(vec![
+                    Span::styled("UNKNOWN:     ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("Missing measurements: {}", missing_stages.join(", ")), Style::default().fg(Color::Yellow)),
+                ])],
+            )
+        }
         Some(BitPerfectVerdict::Idle) | None => {
             (
                 Color::DarkGray,
@@ -2481,6 +2492,23 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("Desktop Notifications:       ", if sel3 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
                 Span::styled(notify_check, Style::default().fg(notify_color).add_modifier(Modifier::BOLD)),
                 Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            form_lines.push(Line::raw(""));
+            let sel4 = s.selected_field == 4;
+            let (reconnect_check, reconnect_color) = if s.reconnect_streams { ("[✓ Enabled]", Color::Green) } else { ("[✗ Disabled]", Color::DarkGray) };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel4 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Automatic Stream Reconnect:  ", if sel4 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(reconnect_check, Style::default().fg(reconnect_color).add_modifier(Modifier::BOLD)),
+                Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+            ]));
+            let sel5 = s.selected_field == 5;
+            let delay_value = if sel5 && s.is_editing_text { format!("{}█", s.text_buffer) } else { s.reconnect_max_delay_secs.clone() };
+            form_lines.push(Line::from(vec![
+                Span::styled(if sel5 { "▶ " } else { "  " }, Style::default().fg(Color::Cyan)),
+                Span::styled("Reconnect Max Delay (seconds): ", if sel5 { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+                Span::styled(delay_value, Style::default().fg(Color::Cyan)),
+                Span::styled(" (1-300, Enter to edit)", Style::default().fg(Color::DarkGray)),
             ]));
         }
         2 => {
