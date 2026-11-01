@@ -800,6 +800,7 @@ impl App {
             .arg(&arg)
             .output();
         self.refresh_hardware_volume();
+        self.update_mpris();
     }
 
     /// Toggles hardware mute via `wpctl`.
@@ -810,6 +811,7 @@ impl App {
             .arg("toggle")
             .output();
         self.refresh_hardware_volume();
+        self.update_mpris();
     }
 
     /// Marks the cached filtered station indices as stale, forcing recomputation on next access.

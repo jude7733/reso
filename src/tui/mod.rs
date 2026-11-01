@@ -51,7 +51,13 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     let recorder =
         StreamRecorder::new(mpv_client.clone(), config_manager.config.record_dir.clone());
     let (action_tx, mut action_rx) = mpsc::channel::<AppAction>(64);
-    let mpris_state = start_mpris_server(action_tx.clone()).await.ok();
+    let mpris_state = match start_mpris_server(action_tx.clone()).await {
+        Ok(state) => Some(state),
+        Err(error) => {
+            eprintln!("MPRIS unavailable: {error}");
+            None
+        }
+    };
 
     // 4. Setup Terminal
     enable_raw_mode()?;
@@ -67,6 +73,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
         action_tx.clone(),
         mpris_state,
     );
+    app.update_mpris();
 
     let mut event_stream = EventStream::new();
     let mut tick_interval = tokio::time::interval(Duration::from_millis(50));
@@ -186,6 +193,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             .arg(format!("{:.2}", v))
                             .output();
                         app.refresh_hardware_volume();
+                        app.update_mpris();
                     }
                     AppAction::ToggleMute => {
                         app.toggle_hardware_mute();

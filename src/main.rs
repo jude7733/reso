@@ -227,6 +227,19 @@ fn handle_config_command(config_manager: &ConfigManager) {
     );
 }
 
+fn read_hardware_volume() -> Option<f64> {
+    let output = Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let output = String::from_utf8_lossy(&output.stdout);
+    let volume = output.split_whitespace().nth(1)?.parse::<f64>().ok()?;
+    Some(volume.clamp(0.0, 1.5) * 100.0)
+}
+
 fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Path) -> Result<()> {
     let count = integration::playlist::import_playlist(path, &mut config_manager.catalog)?;
     config_manager.save_stations()?;
@@ -942,6 +955,9 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     let (client, mut mpv_rx) = get_mpv_client(&config_manager).await?;
     let (action_tx, mut action_rx) = mpsc::channel::<events::AppAction>(64);
     let mpris = start_mpris_server(action_tx).await?;
+    if let Some(volume) = read_hardware_volume() {
+        mpris.lock().await.volume = volume;
+    }
 
     println!("✓ Reso daemon active. MPRIS2 interface exposed on D-Bus.");
     println!("Press Ctrl+C to terminate daemon.");
@@ -969,7 +985,16 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                         events::AppAction::Stop => { let _ = client.stop().await; }
                         events::AppAction::SetVolume(volume) => {
                             let normalized = (volume / 100.0).clamp(0.0, 1.5);
-                            let _ = Command::new("wpctl").args(["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{normalized:.2}")]).output();
+                            let result = Command::new("wpctl")
+                                .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{normalized:.2}")])
+                                .output();
+                            if result.is_ok() {
+                                if let Some(volume) = read_hardware_volume() {
+                                    let mut state = mpris.lock().await;
+                                    state.volume = volume;
+                                    state.emit_properties_changed().await;
+                                }
+                            }
                         }
                         action @ (events::AppAction::NextStation | events::AppAction::PrevStation) => {
                             let stations = &config_manager.catalog.stations;

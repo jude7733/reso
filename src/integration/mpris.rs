@@ -1,7 +1,8 @@
 //! MPRIS2 D-Bus service exposing `reso` to desktop media controllers, Waybar, and keybindings.
 
-use crate::error::Result;
+use crate::error::{ResoError, Result};
 use crate::events::{AppAction, PlaybackState, TrackMetadata};
+use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -173,17 +174,18 @@ impl ResoMprisPlayer {
         let lock = self.state.lock().await;
         let mut map = HashMap::new();
 
-        map.insert(
-            "mpris:trackid".to_string(),
-            Value::from("/org/mpris/MediaPlayer2/CurrentTrack"),
-        );
-
         let title = lock.track_metadata.title.clone().unwrap_or_else(|| {
             lock.track_metadata
                 .raw_title
                 .clone()
                 .unwrap_or_else(|| lock.station_name.clone())
         });
+        let track_identity = format!("{}\0{}", lock.station_name, title);
+        let track_id = format!(
+            "/org/mpris/MediaPlayer2/track/{:x}",
+            Md5::digest(track_identity)
+        );
+        map.insert("mpris:trackid".to_string(), Value::from(track_id));
         map.insert("xesam:title".to_string(), Value::from(title));
 
         if let Some(artist) = &lock.track_metadata.artist {
@@ -222,8 +224,14 @@ impl ResoMprisPlayer {
 
     #[zbus(property)]
     async fn set_volume(&self, vol: f64) {
+        if !vol.is_finite() {
+            return;
+        }
         let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::SetVolume(vol * 100.0)).await;
+        let _ = lock
+            .action_tx
+            .send(AppAction::SetVolume(vol.clamp(0.0, 1.5) * 100.0))
+            .await;
     }
 
     #[zbus(property)]
@@ -270,25 +278,26 @@ pub async fn start_mpris_server(
         connection: None,
     }));
 
+    let connection = zbus::connection::Builder::session()
+        .map_err(|error| ResoError::Mpris(format!("Cannot connect to session bus: {error}")))?;
+    let builder = connection
+        .name("org.mpris.MediaPlayer2.reso")
+        .map_err(|error| {
+            ResoError::Mpris(format!("Cannot own the Reso MPRIS bus name: {error}"))
+        })?;
     let root_iface = ResoMprisRoot::new(state.clone());
     let player_iface = ResoMprisPlayer::new(state.clone());
-    let server_state = state.clone();
-
+    let connection = builder
+        .serve_at("/org/mpris/MediaPlayer2", root_iface)
+        .and_then(|builder| builder.serve_at("/org/mpris/MediaPlayer2", player_iface))
+        .map_err(|error| ResoError::Mpris(format!("Cannot register MPRIS interfaces: {error}")))?
+        .build()
+        .await
+        .map_err(|error| ResoError::Mpris(format!("Cannot start MPRIS service: {error}")))?;
+    state.lock().await.connection = Some(connection.clone());
     tokio::spawn(async move {
-        if let Ok(connection) = zbus::connection::Builder::session() {
-            if let Ok(builder) = connection.name("org.mpris.MediaPlayer2.reso") {
-                if let Ok(builder) = builder.serve_at("/org/mpris/MediaPlayer2", root_iface) {
-                    if let Ok(builder) = builder.serve_at("/org/mpris/MediaPlayer2", player_iface) {
-                        if let Ok(conn) = builder.build().await {
-                            server_state.lock().await.connection = Some(conn.clone());
-                            // Keep connection alive
-                            let _ = std::future::pending::<()>().await;
-                            drop(conn);
-                        }
-                    }
-                }
-            }
-        }
+        let _connection = connection;
+        std::future::pending::<()>().await;
     });
 
     Ok(state)
