@@ -2894,6 +2894,39 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                     Style::default().fg(Color::DarkGray),
                 ),
             ]));
+            for (field, label, enabled) in [
+                (6, "Notify Track Changes", s.notify_track_changes),
+                (7, "Notify Playback Errors", s.notify_errors),
+                (8, "Notify Recording Events", s.notify_recording),
+            ] {
+                let selected = s.selected_field == field;
+                let (value, color) = if enabled {
+                    ("[✓ Enabled]", Color::Green)
+                } else {
+                    ("[✗ Disabled]", Color::DarkGray)
+                };
+                form_lines.push(Line::from(vec![
+                    Span::styled(
+                        if selected { "▶ " } else { "  " },
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(
+                        format!("{label}: "),
+                        if selected {
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::Gray)
+                        },
+                    ),
+                    Span::styled(
+                        value,
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" (Space to toggle)", Style::default().fg(Color::DarkGray)),
+                ]));
+            }
         }
         2 => {
             // Scrobbler Services

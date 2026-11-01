@@ -69,6 +69,9 @@ pub struct SettingsState {
     pub record_dir: String,
     pub socket_path: String,
     pub notifications_enabled: bool,
+    pub notify_track_changes: bool,
+    pub notify_errors: bool,
+    pub notify_recording: bool,
     pub reconnect_streams: bool,
     pub reconnect_max_delay_secs: String,
 
@@ -104,6 +107,9 @@ impl SettingsState {
             record_dir: config.record_dir.to_string_lossy().to_string(),
             socket_path: config.socket_path.to_string_lossy().to_string(),
             notifications_enabled: config.notifications.enabled,
+            notify_track_changes: config.notifications.track_changes,
+            notify_errors: config.notifications.errors,
+            notify_recording: config.notifications.recording,
             reconnect_streams: config.reconnect_streams,
             reconnect_max_delay_secs: config.reconnect_max_delay_secs.to_string(),
 
@@ -121,7 +127,7 @@ impl SettingsState {
     pub fn fields_count(&self) -> usize {
         match self.selected_section {
             0 => 5, // Theme, Visualizer, Sort Mode, Cover Mode, Reduced Motion
-            1 => 6, // Default Station, Record Dir, Socket Path, Notifications, Reconnect, Reconnect Delay
+            1 => 9, // General options plus notification categories
             2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
             3 => 1, // Save Settings Button
             _ => 1,
@@ -618,6 +624,9 @@ impl App {
         self.config_manager.config.record_dir = PathBuf::from(&s.record_dir);
         self.config_manager.config.socket_path = PathBuf::from(&s.socket_path);
         self.config_manager.config.notifications.enabled = s.notifications_enabled;
+        self.config_manager.config.notifications.track_changes = s.notify_track_changes;
+        self.config_manager.config.notifications.errors = s.notify_errors;
+        self.config_manager.config.notifications.recording = s.notify_recording;
         self.config_manager.config.reconnect_streams = s.reconnect_streams;
         self.config_manager.config.reconnect_max_delay_secs = s
             .reconnect_max_delay_secs
@@ -2084,6 +2093,14 @@ impl App {
                         self.settings_state.text_buffer =
                             self.settings_state.reconnect_max_delay_secs.clone();
                         self.settings_state.is_editing_text = true;
+                    }
+                    6 => {
+                        self.settings_state.notify_track_changes =
+                            !self.settings_state.notify_track_changes
+                    }
+                    7 => self.settings_state.notify_errors = !self.settings_state.notify_errors,
+                    8 => {
+                        self.settings_state.notify_recording = !self.settings_state.notify_recording
                     }
                     _ => {}
                 },
