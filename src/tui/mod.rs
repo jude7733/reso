@@ -204,13 +204,34 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         match app.config_manager.bookmark_track(&st_name, &artist, &title, album.as_deref(), codec.as_deref(), rate, bit_depth) {
                             Ok(_) => {
                                 app.load_liked_history();
-                                app.show_toast(format!("★ Liked: {} - {}", artist, title), crate::tui::app::ToastLevel::Success);
+                                if !app.config_manager.config.lastfm.enabled {
+                                    app.show_toast(format!("★ Liked locally: {} - {}", artist, title), crate::tui::app::ToastLevel::Success);
+                                } else { match (app.track_metadata.artist.clone(), app.track_metadata.title.clone()) {
+                                    (Some(lastfm_artist), Some(lastfm_title)) => {
+                                        let scrobbler = app.scrobbler.clone();
+                                        let result_tx = app.action_tx.clone();
+                                        tokio::spawn(async move {
+                                            let result = scrobbler.love_track(&lastfm_artist, &lastfm_title).await.map_err(|e| e.to_string());
+                                            let _ = result_tx.send(AppAction::LastFmLoveComplete {
+                                                artist: lastfm_artist,
+                                                title: lastfm_title,
+                                                result,
+                                            }).await;
+                                        });
+                                        app.show_toast(format!("★ Saved locally; sending love to Last.fm: {} - {}", artist, title), crate::tui::app::ToastLevel::Info);
+                                    }
+                                    _ => app.show_toast(format!("★ Liked locally: {} - {} (track metadata unavailable for Last.fm)", artist, title), crate::tui::app::ToastLevel::Info),
+                                }}
                             }
                             Err(e) => {
                                 app.show_toast(format!("✗ Like failed: {}", e), crate::tui::app::ToastLevel::Error);
                             }
                         }
                     }
+                    AppAction::LastFmLoveComplete { artist, title, result } => match result {
+                        Ok(()) => app.show_toast(format!("★ Loved on Last.fm: {} - {}", artist, title), crate::tui::app::ToastLevel::Success),
+                        Err(e) => app.show_toast(format!("★ Saved locally; Last.fm love failed: {}", e), crate::tui::app::ToastLevel::Error),
+                    },
                     AppAction::CopyTrackToClipboard => {
                         let title_str = app.track_metadata.display_name();
                         match copy_to_clipboard(&title_str) {

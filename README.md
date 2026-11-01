@@ -45,6 +45,7 @@
 - **Scrobbling & Track Bookmarking**:
   - Integrated Last.fm and ListenBrainz scrobbler adhering to the standard 50% / 4-minute playback threshold rule.
   - Instant track bookmarking to `~/.config/reso/liked_tracks.md` (`l` key) and clipboard copy (`c` key via Wayland `wl-copy` / X11).
+  - Liking the playing track also marks it as loved on Last.fm when Last.fm is enabled and authenticated.
 
 ---
 

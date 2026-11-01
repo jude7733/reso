@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 /// Tracks ongoing playback duration to determine when to trigger a scrobble.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ScrobbleTracker {
     lastfm: LastFmConfig,
     listenbrainz: ListenBrainzConfig,
@@ -33,6 +33,54 @@ impl ScrobbleTracker {
             start_time: None,
             scrobbled: false,
         }
+    }
+
+    /// Marks a track as loved on Last.fm.
+    pub async fn love_track(&self, artist: &str, title: &str) -> Result<()> {
+        if !self.lastfm.enabled {
+            return Err(crate::error::ResoError::Scrobbler(
+                "Last.fm is not enabled".to_string(),
+            ));
+        }
+        let (api_key, secret, session_key) = match (
+            &self.lastfm.api_key,
+            &self.lastfm.api_secret,
+            &self.lastfm.session_key,
+        ) {
+            (Some(api_key), Some(secret), Some(session_key)) => (api_key, secret, session_key),
+            _ => {
+                return Err(crate::error::ResoError::Scrobbler(
+                    "Last.fm credentials are incomplete".to_string(),
+                ));
+            }
+        };
+
+        let mut params = BTreeMap::new();
+        params.insert("method", "track.love");
+        params.insert("api_key", api_key.as_str());
+        params.insert("sk", session_key.as_str());
+        params.insert("artist", artist);
+        params.insert("track", title);
+        let sig = calculate_lastfm_signature(&params, secret);
+        params.insert("api_sig", &sig);
+        params.insert("format", "json");
+
+        let response = self
+            .client
+            .post("https://ws.audioscrobbler.com/2.0/")
+            .form(&params)
+            .send()
+            .await?;
+        let status = response.status();
+        let body: serde_json::Value = response.json().await?;
+        if !status.is_success() || body.get("error").is_some() {
+            let detail = body
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Last.fm rejected the request");
+            return Err(crate::error::ResoError::Scrobbler(detail.to_string()));
+        }
+        Ok(())
     }
 
     /// Updates the active track; if changed, resets timer and sends "Now Playing" notification.

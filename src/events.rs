@@ -83,6 +83,11 @@ pub enum AppAction {
     SetVolume(f64),
     ToggleMute,
     BookmarkTrack,
+    LastFmLoveComplete {
+        artist: String,
+        title: String,
+        result: std::result::Result<(), String>,
+    },
     CopyTrackToClipboard,
     Search(String),
     ProbeStream(String),
