@@ -1173,13 +1173,20 @@ impl App {
                 }
                 ActiveTab::Search => {
                     if let Some(st) = self.search_results.get(self.search_results_index).cloned() {
-                        let _ = self.config_manager.add_station(st.clone());
-                        self.catalog = self.config_manager.catalog.clone();
-                        self.invalidate_station_cache();
-                        self.show_toast(
-                            format!("✓ Added \"{}\" to catalog", st.name),
-                            ToastLevel::Success,
-                        );
+                        match self.config_manager.add_station(st.clone()) {
+                            Ok(()) => {
+                                self.catalog = self.config_manager.catalog.clone();
+                                self.invalidate_station_cache();
+                                self.show_toast(
+                                    format!("✓ Added \"{}\" to catalog", st.name),
+                                    ToastLevel::Success,
+                                );
+                            }
+                            Err(error) => self.show_toast(
+                                format!("Station not added: {error}"),
+                                ToastLevel::Error,
+                            ),
+                        }
                     }
                 }
                 _ => {}
@@ -1823,15 +1830,20 @@ impl App {
                         rp_channel: None,
                     };
 
-                    let _ = self.config_manager.edit_station(&orig_id, updated.clone());
-                    self.catalog = self.config_manager.catalog.clone();
-                    self.invalidate_station_cache();
-                    if let Some(ref cur) = self.current_station {
-                        if cur.id == orig_id {
-                            self.current_station = Some(updated);
+                    match self.config_manager.edit_station(&orig_id, updated.clone()) {
+                        Ok(()) => {
+                            self.catalog = self.config_manager.catalog.clone();
+                            self.invalidate_station_cache();
+                            if let Some(ref cur) = self.current_station {
+                                if cur.id == orig_id {
+                                    self.current_station = Some(updated);
+                                }
+                            }
+                            self.modal_state = ModalState::None;
                         }
+                        Err(error) => self
+                            .show_toast(format!("Station not saved: {error}"), ToastLevel::Error),
                     }
-                    self.modal_state = ModalState::None;
                 }
                 KeyCode::Backspace => match state.active_field {
                     0 => {

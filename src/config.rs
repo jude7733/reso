@@ -257,6 +257,39 @@ pub struct Station {
     pub rp_channel: Option<u32>,
 }
 
+impl Station {
+    pub fn validate(&self) -> Result<()> {
+        if self.id.trim().is_empty() || self.name.trim().is_empty() {
+            return Err(ResoError::Config(
+                "station ID and name must not be empty".to_string(),
+            ));
+        }
+        if self.id.chars().any(char::is_control) || self.name.chars().any(char::is_control) {
+            return Err(ResoError::Config(
+                "station ID and name cannot contain control characters".to_string(),
+            ));
+        }
+        let url = reqwest::Url::parse(self.url.trim())
+            .map_err(|error| ResoError::Config(format!("invalid station URL: {error}")))?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return Err(ResoError::Config(
+                "station URL must be an HTTP or HTTPS URL with a host".to_string(),
+            ));
+        }
+        if self.sample_rate > 384_000 {
+            return Err(ResoError::Config(
+                "station sample rate cannot exceed 384000 Hz".to_string(),
+            ));
+        }
+        if self.bit_depth > 32 {
+            return Err(ResoError::Config(
+                "station bit depth cannot exceed 32 bits".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Stations catalog wrapper loaded from `~/.config/reso/stations.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct StationsCatalog {
@@ -734,12 +767,14 @@ impl ConfigManager {
 
     /// Adds or updates a station in the catalog and persists to `stations.toml`.
     pub fn add_station(&mut self, station: Station) -> Result<()> {
+        station.validate()?;
         self.catalog.add_station(station);
         self.save_stations()
     }
 
     /// Edits an existing station (preserving position or replacing ID) and persists to `stations.toml`.
     pub fn edit_station(&mut self, original_id: &str, updated_station: Station) -> Result<()> {
+        updated_station.validate()?;
         if let Some(pos) = self
             .catalog
             .stations
