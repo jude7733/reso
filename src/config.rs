@@ -116,6 +116,8 @@ pub struct DesktopNotificationsConfig {
     pub errors: bool,
     #[serde(default)]
     pub recording: bool,
+    #[serde(default)]
+    pub sleep_timer: bool,
 }
 
 impl Default for DesktopNotificationsConfig {
@@ -125,6 +127,7 @@ impl Default for DesktopNotificationsConfig {
             track_changes: true,
             errors: true,
             recording: false,
+            sleep_timer: false,
         }
     }
 }

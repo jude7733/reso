@@ -2898,6 +2898,7 @@ fn render_settings_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 (6, "Notify Track Changes", s.notify_track_changes),
                 (7, "Notify Playback Errors", s.notify_errors),
                 (8, "Notify Recording Events", s.notify_recording),
+                (9, "Notify Sleep Timer", s.notify_sleep_timer),
             ] {
                 let selected = s.selected_field == field;
                 let (value, color) = if enabled {

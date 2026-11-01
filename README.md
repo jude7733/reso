@@ -324,6 +324,7 @@ enabled = true
 track_changes = true
 errors = true
 recording = false
+sleep_timer = false
 ```
 
 ---

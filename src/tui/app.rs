@@ -72,6 +72,7 @@ pub struct SettingsState {
     pub notify_track_changes: bool,
     pub notify_errors: bool,
     pub notify_recording: bool,
+    pub notify_sleep_timer: bool,
     pub reconnect_streams: bool,
     pub reconnect_max_delay_secs: String,
 
@@ -110,6 +111,7 @@ impl SettingsState {
             notify_track_changes: config.notifications.track_changes,
             notify_errors: config.notifications.errors,
             notify_recording: config.notifications.recording,
+            notify_sleep_timer: config.notifications.sleep_timer,
             reconnect_streams: config.reconnect_streams,
             reconnect_max_delay_secs: config.reconnect_max_delay_secs.to_string(),
 
@@ -126,10 +128,10 @@ impl SettingsState {
 
     pub fn fields_count(&self) -> usize {
         match self.selected_section {
-            0 => 5, // Theme, Visualizer, Sort Mode, Cover Mode, Reduced Motion
-            1 => 9, // General options plus notification categories
-            2 => 6, // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
-            3 => 1, // Save Settings Button
+            0 => 5,  // Theme, Visualizer, Sort Mode, Cover Mode, Reduced Motion
+            1 => 10, // General options plus notification categories
+            2 => 6,  // LastFM Enabled, LastFM Key, LastFM Secret, LastFM Auth, LB Enabled, LB Token
+            3 => 1,  // Save Settings Button
             _ => 1,
         }
     }
@@ -627,6 +629,7 @@ impl App {
         self.config_manager.config.notifications.track_changes = s.notify_track_changes;
         self.config_manager.config.notifications.errors = s.notify_errors;
         self.config_manager.config.notifications.recording = s.notify_recording;
+        self.config_manager.config.notifications.sleep_timer = s.notify_sleep_timer;
         self.config_manager.config.reconnect_streams = s.reconnect_streams;
         self.config_manager.config.reconnect_max_delay_secs = s
             .reconnect_max_delay_secs
@@ -2102,6 +2105,10 @@ impl App {
                     8 => {
                         self.settings_state.notify_recording = !self.settings_state.notify_recording
                     }
+                    9 => {
+                        self.settings_state.notify_sleep_timer =
+                            !self.settings_state.notify_sleep_timer
+                    }
                     _ => {}
                 },
                 2 => match self.settings_state.selected_field {
@@ -2501,6 +2508,23 @@ impl App {
                     self.sleep_timer_secs_remaining = Some(secs - 1);
                 } else {
                     self.sleep_timer_secs_remaining = None;
+                    if self.config_manager.config.notifications.enabled
+                        && self.config_manager.config.notifications.sleep_timer
+                    {
+                        let action_tx = self.action_tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) = crate::integration::notifications::notify(
+                                "Sleep timer finished",
+                                "Playback stopped",
+                            )
+                            .await
+                            {
+                                let _ = action_tx
+                                    .send(AppAction::NotificationFailed(error.to_string()))
+                                    .await;
+                            }
+                        });
+                    }
                     let _ = self.action_tx.send(AppAction::Stop).await;
                 }
             }
