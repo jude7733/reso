@@ -311,6 +311,8 @@ Add the following to `~/.config/waybar/config`:
 
 All user configuration, catalogs, and logs reside in standard XDG paths:
 
+Reso restricts its configuration directory to user-only access and writes `config.toml` (which may contain scrobbling credentials) with user-only permissions on Unix systems.
+
 - `~/.config/reso/config.toml`: General settings, IPC socket configuration, UI theme, and Last.fm/ListenBrainz credentials.
 - `~/.config/reso/stations.toml`: Station catalog and custom user stream definitions.
 - `~/.config/reso/liked_tracks.md`: Appended log of bookmarked tracks with timestamps, station metadata, and audio formats.

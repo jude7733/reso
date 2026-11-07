@@ -12,6 +12,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+fn set_private_permissions(path: &std::path::Path, mode: u32) -> Result<()> {
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
+}
+
 /// Application settings loaded from `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -581,10 +592,12 @@ impl ConfigManager {
     /// Loads configuration, stations playlist, and liked tracks from a specific directory.
     pub fn load_from_dir(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir)?;
+        set_private_permissions(&dir, 0o700)?;
 
         // 1. App Configuration (`config.toml`)
         let config_file = dir.join("config.toml");
         let config = if config_file.exists() {
+            set_private_permissions(&config_file, 0o600)?;
             let content = fs::read_to_string(&config_file)?;
             toml::from_str::<AppConfig>(&content).map_err(|error| {
                 ResoError::Config(format!("{} is invalid: {error}", config_file.display()))
@@ -593,6 +606,7 @@ impl ConfigManager {
             let default_cfg = AppConfig::default();
             let content = toml::to_string_pretty(&default_cfg).map_err(ResoError::TomlSer)?;
             fs::write(&config_file, content)?;
+            set_private_permissions(&config_file, 0o600)?;
             default_cfg
         };
         config.validate()?;
@@ -658,7 +672,9 @@ impl ConfigManager {
     pub fn save_config(&self) -> Result<()> {
         let config_file = self.config_dir.join("config.toml");
         let content = toml::to_string_pretty(&self.config).map_err(ResoError::TomlSer)?;
+        set_private_permissions(&self.config_dir, 0o700)?;
         fs::write(config_file, content)?;
+        set_private_permissions(&self.config_dir.join("config.toml"), 0o600)?;
         Ok(())
     }
 
