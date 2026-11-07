@@ -14,7 +14,9 @@ pub async fn notify(summary: &str, body: &str) -> Result<()> {
     )
     .await
     .map_err(|error| ResoError::Custom(format!("Desktop notifications unavailable: {error}")))?;
-    let actions: [&str; 0] = [];
+    // Vec serializes as the D-Bus `as` array; an empty Rust array serializes as
+    // a zero-field tuple (`()`), which is not a valid D-Bus argument.
+    let actions: Vec<&str> = Vec::new();
     let hints: HashMap<&str, Value<'_>> = HashMap::new();
     proxy
         .call_method(
