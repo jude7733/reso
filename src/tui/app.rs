@@ -14,7 +14,7 @@ use crate::mpv::record::StreamRecorder;
 use crate::tui::cover::CoverArtManager;
 use crate::tui::theme::Theme;
 use crate::tui::visualizer::VisualizerState;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
 use std::path::PathBuf;
 use std::process::Command;
@@ -142,6 +142,7 @@ impl SettingsState {
 pub enum ModalState {
     None,
     Help,
+    CommandPalette(CommandPaletteState),
     AddStation(AddStationState),
     EditStation(EditStationState),
     ConfirmDeleteStation {
@@ -153,6 +154,25 @@ pub enum ModalState {
         track_title: String,
     },
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommandPaletteState {
+    pub query: String,
+    pub selected: usize,
+}
+
+pub const COMMAND_PALETTE_COMMANDS: [&str; 10] = [
+    "Stations tab",
+    "Search tab",
+    "Inspector tab",
+    "Liked tracks tab",
+    "Settings tab",
+    "Toggle playback",
+    "Stop playback",
+    "Next station",
+    "Previous station",
+    "Show keyboard help",
+];
 
 /// Available sorting modes for the stations catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -996,6 +1016,17 @@ impl App {
             return Ok(());
         }
 
+        if self.modal_state == ModalState::None
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('k'))
+        {
+            self.modal_state = ModalState::CommandPalette(CommandPaletteState {
+                query: String::new(),
+                selected: 0,
+            });
+            return Ok(());
+        }
+
         // 1. Handle Active Modals
         if self.modal_state != ModalState::None {
             self.handle_modal_key_event(key).await?;
@@ -1444,6 +1475,73 @@ impl App {
 
     /// Handles key events when a modal dialog is displayed.
     async fn handle_modal_key_event(&mut self, key: KeyEvent) -> Result<()> {
+        if let ModalState::CommandPalette(state) = &mut self.modal_state {
+            match key.code {
+                KeyCode::Esc => self.modal_state = ModalState::None,
+                KeyCode::Enter => {
+                    let filtered = filtered_palette_commands(&state.query);
+                    if let Some(&command) = filtered.get(state.selected) {
+                        self.modal_state = ModalState::None;
+                        match command {
+                            0 => self.active_tab = ActiveTab::Stations,
+                            1 => {
+                                self.active_tab = ActiveTab::Search;
+                                self.search_input_active = true;
+                            }
+                            2 => {
+                                self.active_tab = ActiveTab::Inspector;
+                                self.trigger_pipeline_diagnostics();
+                            }
+                            3 => {
+                                self.active_tab = ActiveTab::Liked;
+                                self.load_liked_history();
+                            }
+                            4 => self.active_tab = ActiveTab::Settings,
+                            5 => {
+                                let _ = self.action_tx.send(AppAction::TogglePause).await;
+                            }
+                            6 => {
+                                let _ = self.action_tx.send(AppAction::Stop).await;
+                            }
+                            7 => {
+                                let _ = self.action_tx.send(AppAction::NextStation).await;
+                            }
+                            8 => {
+                                let _ = self.action_tx.send(AppAction::PrevStation).await;
+                            }
+                            9 => {
+                                self.help_scroll = 0;
+                                self.modal_state = ModalState::Help;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                KeyCode::Up => {
+                    let len = filtered_palette_commands(&state.query).len();
+                    if len > 0 {
+                        state.selected = state.selected.saturating_sub(1);
+                    }
+                }
+                KeyCode::Down => {
+                    let len = filtered_palette_commands(&state.query).len();
+                    if len > 0 {
+                        state.selected = (state.selected + 1).min(len - 1);
+                    }
+                }
+                KeyCode::Backspace => {
+                    state.query.pop();
+                    state.selected = 0;
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    state.query.push(c);
+                    state.selected = 0;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match &mut self.modal_state {
             ModalState::Help => match key.code {
                 KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
@@ -1898,7 +1996,7 @@ impl App {
                 _ => {}
             },
 
-            ModalState::None => {}
+            ModalState::CommandPalette(_) | ModalState::None => {}
         }
 
         Ok(())
@@ -2580,4 +2678,13 @@ impl App {
             }
         }
     }
+}
+
+fn filtered_palette_commands(query: &str) -> Vec<usize> {
+    let query = query.to_lowercase();
+    COMMAND_PALETTE_COMMANDS
+        .iter()
+        .enumerate()
+        .filter_map(|(index, label)| label.to_lowercase().contains(&query).then_some(index))
+        .collect()
 }

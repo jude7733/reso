@@ -3,8 +3,8 @@
 use crate::events::PlaybackState;
 use crate::inspector::status::BitPerfectVerdict;
 use crate::tui::app::{
-    ActiveTab, AddStationState, AddStationStep, App, EditStationState, ModalState, StationSortMode,
-    ToastLevel,
+    ActiveTab, AddStationState, AddStationStep, App, CommandPaletteState, EditStationState,
+    ModalState, StationSortMode, ToastLevel, COMMAND_PALETTE_COMMANDS,
 };
 use crate::tui::visualizer::VisualizerWidget;
 use crate::util::{format_duration, format_sample_rate};
@@ -12,8 +12,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState,
+    Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState,
 };
 use ratatui::Frame;
 
@@ -48,6 +48,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Render Modals if active
     match &app.modal_state {
         ModalState::Help => render_help_modal(f, app, area),
+        ModalState::CommandPalette(state) => render_command_palette(f, state, area),
         ModalState::AddStation(state) => render_add_station_modal(f, state, app.tick_count, area),
         ModalState::EditStation(state) => render_edit_station_modal(f, state, area),
         ModalState::ConfirmDeleteStation { station_name, .. } => {
@@ -58,6 +59,47 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
         ModalState::None => {}
     }
+}
+
+fn render_command_palette(f: &mut Frame, state: &CommandPaletteState, area: Rect) {
+    let width = 54.min(area.width.saturating_sub(4));
+    let height = 15.min(area.height.saturating_sub(2));
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    let filtered: Vec<_> = COMMAND_PALETTE_COMMANDS
+        .iter()
+        .enumerate()
+        .filter(|(_, label)| label.to_lowercase().contains(&state.query.to_lowercase()))
+        .collect();
+    let items: Vec<ListItem> = filtered
+        .iter()
+        .map(|(_, label)| ListItem::new(**label))
+        .collect();
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(format!(" Commands · {} ", state.query))
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("› ");
+    let mut list_state = ListState::default();
+    if !filtered.is_empty() {
+        list_state.select(Some(state.selected.min(filtered.len() - 1)));
+    }
+    f.render_stateful_widget(list, popup, &mut list_state);
 }
 
 /// Renders the top header bar with title, tabs, and status badges.
