@@ -2308,6 +2308,7 @@ dependencies = [
  "futures-util",
  "humantime",
  "image",
+ "libc",
  "md-5",
  "ratatui",
  "ratatui-image",

@@ -183,6 +183,7 @@ systemctl --user restart pipewire wireplumber
 | `reso list` | List all configured stations | `reso list --favorites` |
 | `reso import <file.m3u|file.pls>` | Import and merge stations from a playlist | `reso import favorites.m3u` |
 | `reso export <file.m3u|file.pls>` | Export the configured station catalog | `reso export stations.pls` |
+| `reso check` | Check station endpoint reachability with bounded HTTP requests | `reso check` |
 | `reso play <id/name/url>` | Play a station with optional sleep timer | `reso play rp-main --sleep 45m` |
 | `reso pause` / `resume` / `toggle` | Control active playback state | `reso toggle` |
 | `reso stop` | Stop active playback | `reso stop` |
@@ -281,6 +282,8 @@ systemctl --user enable --now reso.service
 ```
 
 Check it with `systemctl --user status reso.service`; disable it with `systemctl --user disable --now reso.service`. The supplied unit targets `~/.local/bin/reso`; edit `ExecStart` if the binary is installed elsewhere. The desktop launcher starts the interactive TUI, while the service exposes MPRIS in the background.
+
+The TUI and daemon use a per-socket process lock and cannot own the playback session simultaneously. CLI control commands can still connect to the active MPV socket.
 
 ### Control via `playerctl`
 ```bash

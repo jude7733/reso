@@ -7,6 +7,7 @@ pub mod events;
 pub mod inspector;
 pub mod integration;
 pub mod mpv;
+pub mod session;
 pub mod tui;
 pub mod util;
 

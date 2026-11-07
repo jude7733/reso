@@ -35,6 +35,7 @@ use tokio::sync::mpsc;
 
 /// Runs the interactive TUI application.
 pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
+    let _session_lock = crate::session::SessionLock::acquire(&config_manager.config.socket_path)?;
     // 1. Ensure MPV headless daemon is running
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
         .with_reconnect_policy(

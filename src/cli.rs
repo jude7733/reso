@@ -34,6 +34,9 @@ pub enum Commands {
     /// Export stations to an M3U or PLS playlist.
     Export(PlaylistArgs),
 
+    /// Check configured station endpoints for HTTP reachability.
+    Check,
+
     /// Play a station by ID, name, or URL.
     Play(PlayArgs),
 

@@ -7,6 +7,7 @@ pub mod events;
 pub mod inspector;
 pub mod integration;
 pub mod mpv;
+pub mod session;
 pub mod tui;
 pub mod util;
 
@@ -64,6 +65,10 @@ async fn main() -> anyhow::Result<()> {
                 config_manager.catalog.stations.len(),
                 args.path.display()
             );
+        }
+
+        Some(Commands::Check) => {
+            handle_check_command(&config_manager).await?;
         }
 
         Some(Commands::Play(args)) => {
@@ -190,8 +195,56 @@ fn handle_config_command(config_manager: &ConfigManager) {
     );
     println!("UI theme:                      {}", config.ui.theme);
     println!(
+        "Visualizer:                    {}",
+        if config.ui.show_visualizer {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "Reduced motion:                {}",
+        if config.ui.reduced_motion {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
         "Desktop notifications:         {}",
         if config.notifications.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "  Track changes:                {}",
+        if config.notifications.track_changes {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "  Playback errors:              {}",
+        if config.notifications.errors {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "  Recording events:             {}",
+        if config.notifications.recording {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "  Sleep timer:                  {}",
+        if config.notifications.sleep_timer {
             "enabled"
         } else {
             "disabled"
@@ -225,6 +278,57 @@ fn handle_config_command(config_manager: &ConfigManager) {
             "disabled"
         }
     );
+}
+
+async fn handle_check_command(config_manager: &ConfigManager) -> Result<()> {
+    use futures_util::StreamExt;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .user_agent("reso-radio-check/0.1")
+        .build()?;
+    let mut results = futures_util::stream::iter(config_manager.catalog.stations.iter().cloned())
+        .map(|station| {
+            let client = client.clone();
+            async move {
+                let result = client.get(&station.url).send().await;
+                (station.name, result)
+            }
+        })
+        .buffer_unordered(8)
+        .collect::<Vec<_>>()
+        .await;
+    results.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut reachable = 0;
+    println!("Checking {} configured stations...", results.len());
+    for (name, result) in results {
+        match result {
+            Ok(response) if response.status().is_success() || response.status().as_u16() == 206 => {
+                reachable += 1;
+                println!(
+                    "OK   {:<40} HTTP {}",
+                    util::truncate_str(&name, 38),
+                    response.status()
+                );
+            }
+            Ok(response) => println!(
+                "FAIL {:<40} HTTP {}",
+                util::truncate_str(&name, 38),
+                response.status()
+            ),
+            Err(error) => println!("FAIL {:<40} {}", util::truncate_str(&name, 38), error),
+        }
+    }
+    let total = config_manager.catalog.stations.len();
+    println!("Reachable: {reachable}/{total}");
+    if reachable < total {
+        return Err(ResoError::Config(format!(
+            "{} station endpoint(s) are unreachable",
+            total - reachable
+        )));
+    }
+    Ok(())
 }
 
 fn read_hardware_volume() -> Option<f64> {
@@ -945,6 +1049,7 @@ fn handle_volume_command(action: &str) -> Result<()> {
 /// Handles `reso daemon`.
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     println!("Launching Reso background daemon (MPV + MPRIS2)...");
+    let _session_lock = session::SessionLock::acquire(&config_manager.config.socket_path)?;
     let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
         .with_reconnect_policy(
             config_manager.config.reconnect_streams,
