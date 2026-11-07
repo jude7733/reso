@@ -1177,18 +1177,27 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
-    let query_text = format!("Search Query: {}█", app.search_query);
+    let input_focused = app.search_input_active;
+    let cursor = if input_focused { "█" } else { "" };
+    let query_text = format!("Search Query: {}{cursor}", app.search_query);
     let search_title = if app.search_in_flight {
         " Radio-Browser.info Search (Searching… · R refresh) "
+    } else if input_focused {
+        " Radio-Browser.info Search (Query focused · Enter search · R refresh) "
     } else {
-        " Radio-Browser.info Search (Enter query · R refresh results) "
+        " Radio-Browser.info Search (Results focused · Enter query · R refresh) "
+    };
+    let input_border_color = if input_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
     };
     let search_input = Paragraph::new(query_text).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(search_title)
-            .border_style(Style::default().fg(Color::Cyan)),
+            .border_style(Style::default().fg(input_border_color)),
     );
     f.render_widget(search_input, chunks[0]);
 
@@ -1416,10 +1425,15 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(format!(
-                    " Search Results ({}) [Enter: Play | 'a': Add to Catalog] ",
-                    total_len
+                    " Search Results ({}){} [Enter: Play | 'a': Add] ",
+                    total_len,
+                    if input_focused { "" } else { " · focused" }
                 ))
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(if input_focused {
+                    Color::DarkGray
+                } else {
+                    Color::Cyan
+                })),
         )
         .highlight_style(
             Style::default()
@@ -4063,6 +4077,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     4                   Switch to Liked Tracks history tab
     5                   Switch to Settings & Preferences tab
     Tab / BackTab       Cycle next / previous tab
+    Ctrl+P / Ctrl+K     Open searchable command palette
     j / Down            Navigate down / Scroll help down
     k / Up              Navigate up / Scroll help up
     PgDn / d            Scroll down by page (5 lines)
