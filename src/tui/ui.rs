@@ -1178,11 +1178,16 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let query_text = format!("Search Query: {}█", app.search_query);
+    let search_title = if app.search_in_flight {
+        " Radio-Browser.info Search (Searching… · R refresh) "
+    } else {
+        " Radio-Browser.info Search (Enter query · R refresh results) "
+    };
     let search_input = Paragraph::new(query_text).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Radio-Browser.info Search (Enter query · R refresh results) ")
+            .title(search_title)
             .border_style(Style::default().fg(Color::Cyan)),
     );
     f.render_widget(search_input, chunks[0]);

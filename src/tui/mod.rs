@@ -249,9 +249,43 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         }
                     }
                     AppAction::Search(query) => {
-                        if let Ok(res) = app.api_client.search_radio_browser(&query, Some("FLAC"), None, 30).await {
-                            app.search_results = res;
-                            app.search_results_index = 0;
+                        app.search_request_id = app.search_request_id.wrapping_add(1);
+                        let request_id = app.search_request_id;
+                        app.search_in_flight = true;
+                        let api_client = app.api_client.clone();
+                        let action_tx = app.action_tx.clone();
+                        tokio::spawn(async move {
+                            let result = api_client
+                                .search_radio_browser(&query, Some("FLAC"), None, 30)
+                                .await
+                                .map_err(|error| error.to_string());
+                            let _ = action_tx
+                                .send(AppAction::SearchResultsReady { request_id, result })
+                                .await;
+                        });
+                    }
+                    AppAction::SearchResultsReady { request_id, result } => {
+                        if request_id == app.search_request_id {
+                            app.search_in_flight = false;
+                            match result {
+                                Ok(results) => {
+                                    let count = results.len();
+                                    app.search_results = results;
+                                    app.search_results_index = 0;
+                                    app.show_toast(
+                                        if count == 0 {
+                                            "No matching stations found".to_string()
+                                        } else {
+                                            format!("Found {count} stations")
+                                        },
+                                        crate::tui::app::ToastLevel::Info,
+                                    );
+                                }
+                                Err(error) => app.show_toast(
+                                    format!("Station search failed: {error}"),
+                                    crate::tui::app::ToastLevel::Error,
+                                ),
+                            }
                         }
                     }
                     AppAction::ProbeStream(url) => {

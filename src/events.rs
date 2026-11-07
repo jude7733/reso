@@ -90,6 +90,10 @@ pub enum AppAction {
     },
     CopyTrackToClipboard,
     Search(String),
+    SearchResultsReady {
+        request_id: u64,
+        result: std::result::Result<Vec<Station>, String>,
+    },
     ProbeStream(String),
     ProbeComplete(std::result::Result<StreamProbeResult, String>),
     PlayPreview(String),
