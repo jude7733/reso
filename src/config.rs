@@ -10,7 +10,9 @@ use crate::util::{config_dir, default_record_dir, default_socket_path};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -21,6 +23,75 @@ fn set_private_permissions(path: &std::path::Path, mode: u32) -> Result<()> {
     #[cfg(not(unix))]
     let _ = (path, mode);
     Ok(())
+}
+
+fn keyring_lookup(key: &str) -> Option<String> {
+    let output = Command::new("secret-tool")
+        .args(["lookup", "application", "reso", "key", key])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn keyring_store(key: &str, value: Option<&str>) -> bool {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        let Ok(mut child) = Command::new("secret-tool")
+            .args([
+                "store",
+                "--label=Reso scrobbling credentials",
+                "application",
+                "reso",
+                "key",
+                key,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return false;
+        };
+        let Some(mut stdin) = child.stdin.take() else {
+            let _ = child.kill();
+            return false;
+        };
+        if stdin.write_all(value.as_bytes()).is_err() {
+            let _ = child.kill();
+            return false;
+        }
+        drop(stdin);
+        return child.wait().is_ok_and(|status| status.success());
+    }
+    Command::new("secret-tool")
+        .args(["clear", "application", "reso", "key", key])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn hydrate_keyring_credentials(config: &mut AppConfig) {
+    if !config.credentials_in_keyring {
+        return;
+    }
+    if let Some(value) = keyring_lookup("lastfm_api_key") {
+        config.lastfm.api_key = Some(value);
+    }
+    if let Some(value) = keyring_lookup("lastfm_api_secret") {
+        config.lastfm.api_secret = Some(value);
+    }
+    if let Some(value) = keyring_lookup("lastfm_session_key") {
+        config.lastfm.session_key = Some(value);
+    }
+    if let Some(value) = keyring_lookup("listenbrainz_user_token") {
+        config.listenbrainz.user_token = Some(value);
+    }
 }
 
 /// Application settings loaded from `config.toml`.
@@ -48,6 +119,9 @@ pub struct AppConfig {
     pub listenbrainz: ListenBrainzConfig,
 
     #[serde(default)]
+    pub credentials_in_keyring: bool,
+
+    #[serde(default)]
     pub notifications: DesktopNotificationsConfig,
 
     #[serde(default = "default_true")]
@@ -68,6 +142,7 @@ impl Default for AppConfig {
             ui: UiConfig::default(),
             lastfm: LastFmConfig::default(),
             listenbrainz: ListenBrainzConfig::default(),
+            credentials_in_keyring: false,
             notifications: DesktopNotificationsConfig::default(),
             reconnect_streams: true,
             reconnect_max_delay_secs: default_reconnect_delay(),
@@ -596,7 +671,7 @@ impl ConfigManager {
 
         // 1. App Configuration (`config.toml`)
         let config_file = dir.join("config.toml");
-        let config = if config_file.exists() {
+        let mut config = if config_file.exists() {
             set_private_permissions(&config_file, 0o600)?;
             let content = fs::read_to_string(&config_file)?;
             toml::from_str::<AppConfig>(&content).map_err(|error| {
@@ -609,6 +684,7 @@ impl ConfigManager {
             set_private_permissions(&config_file, 0o600)?;
             default_cfg
         };
+        hydrate_keyring_credentials(&mut config);
         config.validate()?;
 
         // 2. Stations Playlist Catalog (`stations.toml`)
@@ -660,18 +736,44 @@ impl ConfigManager {
         // Ensure recording directory exists
         let _ = fs::create_dir_all(&config.record_dir);
 
-        Ok(Self {
+        let manager = Self {
             config_dir: dir,
             config,
             catalog,
             liked_catalog,
-        })
+        };
+        Ok(manager)
     }
 
     /// Saves the current configuration to `config.toml`.
     pub fn save_config(&self) -> Result<()> {
         let config_file = self.config_dir.join("config.toml");
-        let content = toml::to_string_pretty(&self.config).map_err(ResoError::TomlSer)?;
+        let mut persisted_config = self.config.clone();
+        let stored = [
+            keyring_store("lastfm_api_key", self.config.lastfm.api_key.as_deref()),
+            keyring_store(
+                "lastfm_api_secret",
+                self.config.lastfm.api_secret.as_deref(),
+            ),
+            keyring_store(
+                "lastfm_session_key",
+                self.config.lastfm.session_key.as_deref(),
+            ),
+            keyring_store(
+                "listenbrainz_user_token",
+                self.config.listenbrainz.user_token.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .all(|stored| stored);
+        persisted_config.credentials_in_keyring = stored;
+        if stored {
+            persisted_config.lastfm.api_key = None;
+            persisted_config.lastfm.api_secret = None;
+            persisted_config.lastfm.session_key = None;
+            persisted_config.listenbrainz.user_token = None;
+        }
+        let content = toml::to_string_pretty(&persisted_config).map_err(ResoError::TomlSer)?;
         set_private_permissions(&self.config_dir, 0o700)?;
         fs::write(config_file, content)?;
         set_private_permissions(&self.config_dir.join("config.toml"), 0o600)?;

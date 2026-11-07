@@ -195,6 +195,14 @@ fn handle_config_command(config_manager: &ConfigManager) {
     );
     println!("UI theme:                      {}", config.ui.theme);
     println!(
+        "Credential storage:            {}",
+        if config.credentials_in_keyring {
+            "Secret Service keyring"
+        } else {
+            "private config.toml fallback"
+        }
+    );
+    println!(
         "Visualizer:                    {}",
         if config.ui.show_visualizer {
             "enabled"

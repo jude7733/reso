@@ -311,7 +311,7 @@ Add the following to `~/.config/waybar/config`:
 
 All user configuration, catalogs, and logs reside in standard XDG paths:
 
-Reso restricts its configuration directory to user-only access and writes `config.toml` (which may contain scrobbling credentials) with user-only permissions on Unix systems.
+Reso restricts its configuration directory to user-only access. When the Secret Service (`secret-tool`) is available, saving settings stores Last.fm and ListenBrainz credentials in the OS keyring; otherwise it retains them in `config.toml` with user-only Unix permissions. Saving settings migrates existing file-based credentials when keyring storage succeeds.
 
 - `~/.config/reso/config.toml`: General settings, IPC socket configuration, UI theme, and Last.fm/ListenBrainz credentials.
 - `~/.config/reso/stations.toml`: Station catalog and custom user stream definitions.
