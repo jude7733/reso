@@ -161,7 +161,7 @@ pub struct CommandPaletteState {
     pub selected: usize,
 }
 
-pub const COMMAND_PALETTE_COMMANDS: [&str; 10] = [
+pub const COMMAND_PALETTE_COMMANDS: [&str; 11] = [
     "Stations tab",
     "Search tab",
     "Inspector tab",
@@ -171,6 +171,7 @@ pub const COMMAND_PALETTE_COMMANDS: [&str; 10] = [
     "Stop playback",
     "Next station",
     "Previous station",
+    "Refresh search results",
     "Show keyboard help",
 ];
 
@@ -1153,6 +1154,10 @@ impl App {
                 let _ = self.action_tx.send(AppAction::BookmarkTrack).await;
             }
 
+            KeyCode::Char('R') if self.active_tab == ActiveTab::Search => {
+                self.refresh_search_results().await?;
+            }
+
             // Edit Station ('e') on Stations tab
             KeyCode::Char('e') => {
                 if self.active_tab == ActiveTab::Stations {
@@ -1510,6 +1515,10 @@ impl App {
                                 let _ = self.action_tx.send(AppAction::PrevStation).await;
                             }
                             9 => {
+                                self.active_tab = ActiveTab::Search;
+                                self.refresh_search_results().await?;
+                            }
+                            10 => {
                                 self.help_scroll = 0;
                                 self.modal_state = ModalState::Help;
                             }
@@ -1999,6 +2008,18 @@ impl App {
             ModalState::CommandPalette(_) | ModalState::None => {}
         }
 
+        Ok(())
+    }
+
+    async fn refresh_search_results(&mut self) -> Result<()> {
+        let query = self.search_query.trim().to_string();
+        if query.is_empty() {
+            self.show_toast("Enter a station name before refreshing", ToastLevel::Info);
+            self.search_input_active = true;
+            return Ok(());
+        }
+        let _ = self.action_tx.send(AppAction::Search(query)).await;
+        self.show_toast("Refreshing station search…", ToastLevel::Info);
         Ok(())
     }
 

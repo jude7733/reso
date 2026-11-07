@@ -1182,7 +1182,7 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Radio-Browser.info Lossless Search (Press Enter to query) ")
+            .title(" Radio-Browser.info Search (Enter query · R refresh results) ")
             .border_style(Style::default().fg(Color::Cyan)),
     );
     f.render_widget(search_input, chunks[0]);
@@ -4049,6 +4049,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     r                   Toggle lossless stream recording (~/Music/Radio/)
     l                   Like / Bookmark playing track (~/.config/reso/liked_tracks.toml)
     /                   Search Radio-Browser catalog / filter stations
+    R                   Refresh the current Radio-Browser search query
 
   Navigation & Views:
     1                   Switch to Stations tab
