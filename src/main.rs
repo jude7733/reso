@@ -31,7 +31,7 @@ use util::{format_duration, format_sample_rate, parse_duration_str};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config_manager = ConfigManager::load_or_init()?;
+    let mut config_manager = ConfigManager::load_or_init()?;
 
     match cli.command {
         None | Some(Commands::Tui) => {
@@ -52,6 +52,11 @@ async fn main() -> anyhow::Result<()> {
 
         Some(Commands::Delete(args)) => {
             handle_delete_command(config_manager, args.station)?;
+        }
+
+        Some(Commands::RestoreStations) => {
+            let count = config_manager.restore_hidden_stations()?;
+            println!("Restored {count} hidden bundled station(s).");
         }
 
         Some(Commands::Import(args)) => {

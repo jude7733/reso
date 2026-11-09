@@ -28,6 +28,9 @@ pub enum Commands {
     /// Delete a radio station from the catalog.
     Delete(DeleteArgs),
 
+    /// Restore bundled stations that were hidden from the catalog.
+    RestoreStations,
+
     /// Import stations from an M3U or PLS playlist.
     Import(PlaylistArgs),
 

@@ -181,6 +181,7 @@ systemctl --user restart pipewire wireplumber
 | :--- | :--- | :--- |
 | `reso` | Launch interactive full-screen TUI dashboard (default) | `reso` |
 | `reso list` | List all configured stations | `reso list --favorites` |
+| `reso restore-stations` | Restore bundled stations hidden from the catalog | `reso restore-stations` |
 | `reso import <file.m3u|file.pls>` | Import and merge stations from a playlist | `reso import favorites.m3u` |
 | `reso export <file.m3u|file.pls>` | Export the configured station catalog | `reso export stations.pls` |
 | `reso check` | Check station endpoint reachability with bounded HTTP requests | `reso check` |
