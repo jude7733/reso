@@ -20,7 +20,6 @@ use inspector::status::PipelineStatus;
 use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
 use integration::mpris::start_mpris_server;
-use mpv::client::MpvClient;
 use mpv::record::StreamRecorder;
 use std::process::Command;
 use tokio::signal;
@@ -80,26 +79,26 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Pause) => {
-            let (client, _) = get_mpv_client(&config_manager).await?;
-            client.pause().await?;
+            let playback_session = get_playback_session(&config_manager).await?;
+            playback_session.pause().await?;
             println!("Playback paused.");
         }
 
         Some(Commands::Resume) => {
-            let (client, _) = get_mpv_client(&config_manager).await?;
-            client.resume().await?;
+            let playback_session = get_playback_session(&config_manager).await?;
+            playback_session.resume().await?;
             println!("Playback resumed.");
         }
 
         Some(Commands::Toggle) => {
-            let (client, _) = get_mpv_client(&config_manager).await?;
-            client.toggle_pause().await?;
+            let playback_session = get_playback_session(&config_manager).await?;
+            playback_session.toggle_pause().await?;
             println!("Toggled playback state.");
         }
 
         Some(Commands::Stop) => {
-            let (client, _) = get_mpv_client(&config_manager).await?;
-            client.stop().await?;
+            let playback_session = get_playback_session(&config_manager).await?;
+            playback_session.stop().await?;
             println!("Playback stopped.");
         }
 
@@ -364,17 +363,10 @@ fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Pa
 }
 
 /// Connects to the MPV IPC server or starts it if required.
-async fn get_mpv_client(
-    config_manager: &ConfigManager,
-) -> Result<(
-    MpvClient,
-    tokio::sync::broadcast::Receiver<events::MpvEvent>,
-)> {
+async fn get_playback_session(config_manager: &ConfigManager) -> Result<session::PlaybackSession> {
     let mut session = session::PlaybackSession::connect(&config_manager.config).await?;
-    let client = session.client();
-    let events = session.subscribe();
     session.disown_process();
-    Ok((client, events))
+    Ok(session)
 }
 
 /// Handles `reso list`.
@@ -463,8 +455,10 @@ async fn handle_play_command(
         }
     };
 
-    let (client, mut rx) = get_mpv_client(&config_manager).await?;
-    client.load_file(&station.url).await?;
+    let mut playback_session = get_playback_session(&config_manager).await?;
+    let mut rx = playback_session.subscribe();
+    playback_session.play_station(&station).await?;
+    let client = playback_session.client();
 
     println!("▶ Streaming: {} [{}]", station.name, station.codec);
     println!("  URL: {}", station.url);
@@ -503,7 +497,7 @@ async fn handle_play_command(
 
 /// Cycles to next or previous station.
 async fn handle_cycle_station(config_manager: &ConfigManager, forward: bool) -> Result<()> {
-    let (client, _) = get_mpv_client(config_manager).await?;
+    let playback_session = get_playback_session(config_manager).await?;
     let stations = &config_manager.catalog.stations;
     if stations.is_empty() {
         return Ok(());
@@ -511,15 +505,17 @@ async fn handle_cycle_station(config_manager: &ConfigManager, forward: bool) -> 
 
     let target_idx = if forward { 0 } else { stations.len() - 1 };
     let st = &stations[target_idx];
-    client.load_file(&st.url).await?;
+    playback_session.play_station(st).await?;
     println!("▶ Switched to: {} [{}]", st.name, st.codec);
     Ok(())
 }
 
 /// Handles `reso current`.
 async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -> Result<()> {
-    let (_client, _rx) = get_mpv_client(config_manager).await?;
-    let status = PipelineStatus::evaluate(&AudioStreamParams::default(), 100.0, None);
+    let playback_session = get_playback_session(config_manager).await?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let snapshot = playback_session.snapshot().await;
+    let status = PipelineStatus::evaluate(&snapshot.audio_params, snapshot.volume, None);
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
@@ -648,7 +644,8 @@ async fn handle_record_command(
     action: &str,
     output: Option<std::path::PathBuf>,
 ) -> Result<()> {
-    let (client, _) = get_mpv_client(config_manager).await?;
+    let playback_session = get_playback_session(config_manager).await?;
+    let client = playback_session.client();
     let recorder = StreamRecorder::new(client, config_manager.config.record_dir.clone());
 
     match action {
@@ -849,7 +846,8 @@ fn handle_delete_command(mut config_manager: ConfigManager, station_query: Strin
 /// Handles `reso like`.
 async fn handle_like_command(config_manager: &mut ConfigManager) -> Result<()> {
     let (artist, title, album, station, codec, sample_rate, bit_depth) =
-        if let Ok((_client, mut rx)) = get_mpv_client(config_manager).await {
+        if let Ok(mut playback_session) = get_playback_session(config_manager).await {
+            let mut rx = playback_session.subscribe();
             let mut meta = events::TrackMetadata::default();
             let mut params = events::AudioStreamParams::default();
             let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(60));
