@@ -44,7 +44,7 @@
   - Rich metadata polling for services like Radio Paradise (high-res cover art, upcoming tracks, time remaining).
 - **Scrobbling & Track Bookmarking**:
   - Integrated Last.fm and ListenBrainz scrobbler adhering to the standard 50% / 4-minute playback threshold rule.
-  - Instant track bookmarking to `~/.config/reso/liked_tracks.md` (`l` key) and clipboard copy (`c` key via Wayland `wl-copy` / X11).
+  - Instant track bookmarking to `~/.config/reso/liked_tracks.toml` (`l` key) and clipboard copy (`c` key via Wayland `wl-copy` / X11).
   - Liking the playing track also marks it as loved on Last.fm when Last.fm is enabled and authenticated.
 
 ---
@@ -192,7 +192,7 @@ systemctl --user restart pipewire wireplumber
 | `reso search <query>` | Discover lossless stations from Radio-Browser | `reso search classical --codec FLAC --add` |
 | `reso inspect` | Run 3-stage Audiophile Pipeline Inspector | `reso inspect` |
 | `reso record [action]` | Manage lossless stream recording | `reso record start` / `stop` / `status` |
-| `reso like` | Bookmark current track to `liked_tracks.md` | `reso like` |
+| `reso like` | Bookmark current track to `liked_tracks.toml` | `reso like` |
 | `reso copy` | Copy `Artist - Title` to system clipboard | `reso copy` |
 | `reso volume [action]` | Hardware volume control via `wpctl` | `reso volume up` / `reso volume 40%` |
 | `reso config` | Show effective settings and config paths without printing credentials | `reso config` |
@@ -210,17 +210,26 @@ When running the interactive TUI (`reso`):
 | `Enter` | Play selected station or search result |
 | `s` | Stop playback |
 | `n` / `p` | Skip to Next / Previous station |
+| `a` | Add a station or add the selected search result to the catalog |
+| `e` | Edit the selected station |
+| `d` / `x` | Remove a station or liked track (bundled stations can be restored with `U`) |
 | `f` | Toggle Favorite status on selected station |
+| `S` | Cycle station sorting mode |
+| `R` | Refresh current Radio-Browser search results |
+| `U` | Restore hidden bundled stations |
 | `r` | Toggle Lossless Stream Recording (`~/Music/Radio/`) |
-| `l` | Bookmark track to `~/.config/reso/liked_tracks.md` |
-| `c` | Copy `Artist - Title` to system clipboard |
+| `l` | Bookmark track to `~/.config/reso/liked_tracks.toml` |
+| `y` / `c` | Copy station URL / current track information |
 | `+` / `-` | Increase / Decrease Hardware Volume (`wpctl`) |
 | `m` | Toggle Hardware Mute (`wpctl`) |
 | `/` | Focus search / filter input |
+| `Ctrl+P` / `Ctrl+K` | Open searchable command palette |
 | `1` | Switch to **Stations Catalog** view |
 | `2` | Switch to **Radio-Browser Search** view |
 | `3` | Switch to **Audiophile Inspector & DAC Matrix** view |
 | `4` | Switch to **Liked Tracks History** view |
+| `5` | Switch to **Settings & Preferences** view |
+| `Tab` / `BackTab` | Cycle between views |
 | `?` | Toggle Help & Shortcuts overlay |
 | `q` / `Esc` | Quit `reso` |
 
@@ -315,7 +324,7 @@ Reso restricts its configuration directory to user-only access. When the Secret 
 
 - `~/.config/reso/config.toml`: General settings, IPC socket configuration, UI theme, and Last.fm/ListenBrainz credentials.
 - `~/.config/reso/stations.toml`: Station catalog and custom user stream definitions.
-- `~/.config/reso/liked_tracks.md`: Appended log of bookmarked tracks with timestamps, station metadata, and audio formats.
+- `~/.config/reso/liked_tracks.toml`: Structured catalog of bookmarked tracks and station metadata (legacy Markdown files are migrated on load).
 - `~/Music/Radio/`: Default destination directory for lossless stream recordings (`.flac`).
 
 Desktop notifications use the session D-Bus notification service and are optional. Configure them in `~/.config/reso/config.toml`:
