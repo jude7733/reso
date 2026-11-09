@@ -62,7 +62,6 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
 
     let mut app = App::new(
         config_manager,
-        mpv_client.clone(),
         recorder.clone(),
         action_tx.clone(),
         mpris_state,
