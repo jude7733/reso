@@ -1232,6 +1232,26 @@ impl App {
                 _ => {}
             },
 
+            KeyCode::Char('U') if self.active_tab == ActiveTab::Stations => {
+                match self.config_manager.restore_hidden_stations() {
+                    Ok(count) if count > 0 => {
+                        self.catalog = self.config_manager.catalog.clone();
+                        self.invalidate_station_cache();
+                        self.show_toast(
+                            format!("Restored {count} hidden bundled station(s)"),
+                            ToastLevel::Success,
+                        );
+                    }
+                    Ok(_) => {
+                        self.show_toast("No hidden bundled stations to restore", ToastLevel::Info)
+                    }
+                    Err(error) => self.show_toast(
+                        format!("Could not restore stations: {error}"),
+                        ToastLevel::Error,
+                    ),
+                }
+            }
+
             // Delete Station or Liked Track (vim 'd' or 'x')
             KeyCode::Char('d') | KeyCode::Char('x') => match self.active_tab {
                 ActiveTab::Stations => {

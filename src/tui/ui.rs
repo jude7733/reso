@@ -3943,7 +3943,7 @@ fn render_confirm_delete_station_modal(f: &mut Frame, station_name: &str, area: 
     let content = vec![
         Line::raw(""),
         Line::from(vec![Span::styled(
-            "Are you sure you want to remove this station?",
+            "Bundled stations are hidden; custom stations are removed.",
             Style::default().fg(Color::White),
         )]),
         Line::from(vec![
@@ -3955,6 +3955,10 @@ fn render_confirm_delete_station_modal(f: &mut Frame, station_name: &str, area: 
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
+        Line::from(vec![Span::styled(
+            "Press U to restore hidden bundled stations.",
+            Style::default().fg(Color::DarkGray),
+        )]),
         Line::raw(""),
         Line::from(vec![
             Span::styled(
@@ -4062,6 +4066,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     a                   Add new station endpoint URL (probe & verify format)
     e / c               Edit selected station parameters (codec, sample rate, bits, tags)
     d / x               Delete selected station / liked track (with confirmation)
+    U                   Restore hidden bundled stations
     S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec)
     f                   Toggle favorite on selected station
     y / c               Yank / Copy station stream URL or track title to clipboard

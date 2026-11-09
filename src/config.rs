@@ -381,6 +381,9 @@ impl Station {
 pub struct StationsCatalog {
     #[serde(default)]
     pub stations: Vec<Station>,
+    /// Bundled stations removed by the user, retained so edits can be restored.
+    #[serde(default)]
+    pub hidden_stations: Vec<Station>,
 }
 
 impl StationsCatalog {
@@ -439,7 +442,9 @@ impl StationsCatalog {
 
         // 2. Append newly added default stations if not already present in catalog
         for def_st in defaults.stations {
-            if !self.stations.iter().any(|s| s.id == def_st.id) {
+            if !self.stations.iter().any(|s| s.id == def_st.id)
+                && !self.hidden_stations.iter().any(|s| s.id == def_st.id)
+            {
                 self.stations.push(def_st);
                 modified = true;
             }
@@ -460,8 +465,37 @@ impl StationsCatalog {
     /// Removes a station from the catalog by ID.
     pub fn remove_station(&mut self, station_id: &str) -> bool {
         let initial_len = self.stations.len();
+        let removed_station = self
+            .stations
+            .iter()
+            .find(|station| station.id == station_id)
+            .cloned();
         self.stations.retain(|s| s.id != station_id);
-        self.stations.len() < initial_len
+        let removed = self.stations.len() < initial_len;
+        if let Some(station) = removed_station {
+            let bundled = Self::default_lossless_stations()
+                .stations
+                .iter()
+                .any(|default_station| default_station.id == station_id);
+            if bundled {
+                self.hidden_stations
+                    .retain(|hidden| hidden.id != station_id);
+                self.hidden_stations.push(station);
+            }
+        }
+        removed
+    }
+
+    /// Restores every hidden bundled station, preserving any user edits.
+    pub fn restore_hidden_stations(&mut self) -> usize {
+        let hidden = std::mem::take(&mut self.hidden_stations);
+        let count = hidden.len();
+        for station in hidden {
+            if !self.stations.iter().any(|visible| visible.id == station.id) {
+                self.stations.push(station);
+            }
+        }
+        count
     }
 
     /// Finds a station by ID, name, or URL.
@@ -914,5 +948,14 @@ impl ConfigManager {
             self.save_stations()?;
         }
         Ok(removed)
+    }
+
+    /// Restores hidden bundled stations and persists the catalog when changed.
+    pub fn restore_hidden_stations(&mut self) -> Result<usize> {
+        let restored = self.catalog.restore_hidden_stations();
+        if restored > 0 {
+            self.save_stations()?;
+        }
+        Ok(restored)
     }
 }
