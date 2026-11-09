@@ -18,8 +18,6 @@ use crate::error::Result;
 use crate::events::AppAction;
 use crate::integration::clipboard::copy_to_clipboard;
 use crate::integration::mpris::start_mpris_server;
-use crate::mpv::client::MpvClient;
-use crate::mpv::process::MpvProcessManager;
 use crate::mpv::record::StreamRecorder;
 use crossterm::event::{Event, EventStream};
 use crossterm::execute;
@@ -36,17 +34,12 @@ use tokio::sync::mpsc;
 /// Runs the interactive TUI application.
 pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     let _session_lock = crate::session::SessionLock::acquire(&config_manager.config.socket_path)?;
-    // 1. Ensure MPV headless daemon is running
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(
-            config_manager.config.reconnect_streams,
-            config_manager.config.reconnect_max_delay_secs,
-        );
-    mpv_proc.ensure_running().await?;
-
-    // 2. Connect MPV IPC client
-    let (mpv_client, mut mpv_rx) =
-        MpvClient::connect(config_manager.config.socket_path.clone()).await?;
+    // 1. Establish the owned playback process and IPC session.
+    let mut playback_session =
+        crate::session::PlaybackSession::connect(&config_manager.config).await?;
+    let mpv_client = playback_session.client();
+    let mut mpv_rx = playback_session.subscribe();
+    let initial_snapshot = playback_session.snapshot().await;
 
     // 3. Initialize Recorder & MPRIS
     let recorder =
@@ -74,6 +67,13 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
         action_tx.clone(),
         mpris_state,
     );
+    app.current_station = initial_snapshot.current_station;
+    app.playback_state = initial_snapshot.playback_state;
+    app.track_metadata = initial_snapshot.metadata;
+    app.stream_params = initial_snapshot.audio_params;
+    app.is_recording = initial_snapshot.is_recording;
+    app.active_recording_path = initial_snapshot.recording_path;
+    app.visualizer_state.is_playing = app.playback_state == crate::events::PlaybackState::Playing;
     app.update_mpris();
 
     let mut event_stream = EventStream::new();
@@ -102,8 +102,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
             Some(action) = action_rx.recv() => {
                 match action {
                     AppAction::Play(station) => {
-                        let _ = app.mpv_client.load_file(&station.url).await;
-                        let _ = app.mpv_client.resume().await;
+                        let _ = playback_session.play_station(&station).await;
                         let name = station.name.clone();
                         app.current_station = Some(station);
                         app.track_started_at = Some(std::time::Instant::now());
@@ -111,16 +110,16 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         app.update_mpris();
                     }
                     AppAction::Pause => {
-                        let _ = app.mpv_client.pause().await;
+                        let _ = playback_session.pause().await;
                     }
                     AppAction::Resume => {
-                        let _ = app.mpv_client.resume().await;
+                        let _ = playback_session.resume().await;
                     }
                     AppAction::TogglePause => {
-                        let _ = app.mpv_client.toggle_pause().await;
+                        let _ = playback_session.toggle_pause().await;
                     }
                     AppAction::Stop => {
-                        let _ = app.mpv_client.stop().await;
+                        let _ = playback_session.stop().await;
                         app.current_station = None;
                         app.track_started_at = None;
                         app.visualizer_state.stop_capture();
@@ -131,8 +130,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         if total > 0 {
                             app.station_list_index = (app.station_list_index + 1) % total;
                             let st = app.catalog.stations[app.station_list_index].clone();
-                            let _ = app.mpv_client.load_file(&st.url).await;
-                            let _ = app.mpv_client.resume().await;
+                            let _ = playback_session.play_station(&st).await;
                             app.track_started_at = Some(std::time::Instant::now());
                             app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
@@ -148,8 +146,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                                 app.station_list_index -= 1;
                             }
                             let st = app.catalog.stations[app.station_list_index].clone();
-                            let _ = app.mpv_client.load_file(&st.url).await;
-                            let _ = app.mpv_client.resume().await;
+                            let _ = playback_session.play_station(&st).await;
                             app.track_started_at = Some(std::time::Instant::now());
                             app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
@@ -289,7 +286,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         }
                     }
                     AppAction::ProbeStream(url) => {
-                        let _ = mpv_client.load_file(&url).await;
+                        let _ = playback_session.load_url(&url).await;
                         let tx = app.action_tx.clone();
                         tokio::spawn(async move {
                             let res = crate::integration::prober::StreamProber::probe_endpoint(&url).await;
@@ -300,13 +297,13 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         app.handle_probe_result(res);
                     }
                     AppAction::PlayPreview(url) => {
-                        let _ = mpv_client.load_file(&url).await;
+                        let _ = playback_session.load_url(&url).await;
                     }
                     AppAction::RestorePreviousPlayback => {
                         if let Some(ref st) = app.current_station {
-                            let _ = mpv_client.load_file(&st.url).await;
+                            let _ = playback_session.play_station(st).await;
                         } else {
-                            let _ = mpv_client.stop().await;
+                            let _ = playback_session.stop().await;
                         }
                     }
                     AppAction::UpdateStation(st) => {

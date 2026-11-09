@@ -21,7 +21,6 @@ use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
 use integration::mpris::start_mpris_server;
 use mpv::client::MpvClient;
-use mpv::process::MpvProcessManager;
 use mpv::record::StreamRecorder;
 use std::process::Command;
 use tokio::signal;
@@ -371,14 +370,11 @@ async fn get_mpv_client(
     MpvClient,
     tokio::sync::broadcast::Receiver<events::MpvEvent>,
 )> {
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(
-            config_manager.config.reconnect_streams,
-            config_manager.config.reconnect_max_delay_secs,
-        );
-    mpv_proc.ensure_running().await?;
-    mpv_proc.disown();
-    MpvClient::connect(config_manager.config.socket_path.clone()).await
+    let mut session = session::PlaybackSession::connect(&config_manager.config).await?;
+    let client = session.client();
+    let events = session.subscribe();
+    session.disown_process();
+    Ok((client, events))
 }
 
 /// Handles `reso list`.
@@ -1063,24 +1059,37 @@ fn handle_volume_command(action: &str) -> Result<()> {
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     println!("Launching Reso background daemon (MPV + MPRIS2)...");
     let _session_lock = session::SessionLock::acquire(&config_manager.config.socket_path)?;
-    let mut mpv_proc = MpvProcessManager::new(config_manager.config.socket_path.clone())
-        .with_reconnect_policy(
-            config_manager.config.reconnect_streams,
-            config_manager.config.reconnect_max_delay_secs,
-        );
-    mpv_proc.ensure_running().await?;
-
-    let (client, mut mpv_rx) = get_mpv_client(&config_manager).await?;
+    let mut playback_session = session::PlaybackSession::connect(&config_manager.config).await?;
+    let mut mpv_rx = playback_session.subscribe();
+    let initial_snapshot = playback_session.snapshot().await;
     let (action_tx, mut action_rx) = mpsc::channel::<events::AppAction>(64);
     let mpris = start_mpris_server(action_tx).await?;
-    if let Some(volume) = read_hardware_volume() {
-        mpris.lock().await.volume = volume;
+    {
+        let mut state = mpris.lock().await;
+        state.playback_state = initial_snapshot.playback_state;
+        state.station_name = initial_snapshot
+            .current_station
+            .as_ref()
+            .map(|station| station.name.clone())
+            .unwrap_or_else(|| "Reso Radio".to_string());
+        state.track_metadata = initial_snapshot.metadata.clone();
+        state.volume = read_hardware_volume().unwrap_or(initial_snapshot.volume);
+        state.emit_properties_changed().await;
     }
 
     println!("✓ Reso daemon active. MPRIS2 interface exposed on D-Bus.");
     println!("Press Ctrl+C to terminate daemon.");
 
-    let mut current_station_index = None;
+    let mut current_station_index = initial_snapshot
+        .current_station
+        .as_ref()
+        .and_then(|current| {
+            config_manager
+                .catalog
+                .stations
+                .iter()
+                .position(|station| station.id == current.id)
+        });
     tokio::select! {
         _ = signal::ctrl_c() => {
             println!("\nDaemon stopping.");
@@ -1090,17 +1099,17 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                 tokio::select! {
                     Some(action) = action_rx.recv() => match action {
                         events::AppAction::Play(st) => {
-                            let _ = client.load_file(&st.url).await;
+                            let _ = playback_session.play_station(&st).await;
                             current_station_index = config_manager.catalog.stations.iter().position(|station| station.id == st.id);
                             let mut state = mpris.lock().await;
                             state.station_name = st.name;
                             state.track_metadata = events::TrackMetadata::default();
                             state.emit_properties_changed().await;
                         }
-                        events::AppAction::Pause => { let _ = client.pause().await; }
-                        events::AppAction::Resume => { let _ = client.resume().await; }
-                        events::AppAction::TogglePause => { let _ = client.toggle_pause().await; }
-                        events::AppAction::Stop => { let _ = client.stop().await; }
+                        events::AppAction::Pause => { let _ = playback_session.pause().await; }
+                        events::AppAction::Resume => { let _ = playback_session.resume().await; }
+                        events::AppAction::TogglePause => { let _ = playback_session.toggle_pause().await; }
+                        events::AppAction::Stop => { let _ = playback_session.stop().await; }
                         events::AppAction::SetVolume(volume) => {
                             let normalized = (volume / 100.0).clamp(0.0, 1.5);
                             let result = Command::new("wpctl")
@@ -1125,7 +1134,7 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                                     _ => unreachable!(),
                                 };
                                 let station = &stations[index];
-                                let _ = client.load_file(&station.url).await;
+                                let _ = playback_session.play_station(station).await;
                                 current_station_index = Some(index);
                                 let mut state = mpris.lock().await;
                                 state.station_name = station.name.clone();
