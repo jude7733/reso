@@ -4,11 +4,13 @@ use crate::error::{ResoError, Result};
 use crate::events::{AudioStreamParams, MpvEvent, PlaybackState, TrackMetadata};
 use crate::mpv::client::MpvClient;
 use crate::mpv::process::MpvProcessManager;
+use crate::mpv::record::StreamRecorder;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
 
 /// Owns the MPV process and IPC client for one Reso playback session.
@@ -24,6 +26,7 @@ pub struct PlaybackSnapshot {
     pub volume: f64,
     pub is_recording: bool,
     pub recording_path: Option<std::path::PathBuf>,
+    pub recording_state_known: bool,
     pub last_error: Option<String>,
 }
 
@@ -37,6 +40,7 @@ impl Default for PlaybackSnapshot {
             volume: 100.0,
             is_recording: false,
             recording_path: None,
+            recording_state_known: false,
             last_error: None,
         }
     }
@@ -48,6 +52,7 @@ pub struct PlaybackSession {
     initial_events: Option<broadcast::Receiver<MpvEvent>>,
     event_tx: broadcast::Sender<MpvEvent>,
     snapshot: std::sync::Arc<RwLock<PlaybackSnapshot>>,
+    recorder: StreamRecorder,
 }
 
 impl PlaybackSession {
@@ -56,11 +61,13 @@ impl PlaybackSession {
             .with_reconnect_policy(config.reconnect_streams, config.reconnect_max_delay_secs);
         process.ensure_running().await?;
         let (client, mut mpv_events) = MpvClient::connect(config.socket_path.clone()).await?;
+        let recorder = StreamRecorder::new(client.clone(), config.record_dir.clone());
         let (event_tx, _) = broadcast::channel(128);
         let initial_events = event_tx.subscribe();
         let snapshot = std::sync::Arc::new(RwLock::new(PlaybackSnapshot::default()));
         let event_snapshot = snapshot.clone();
         let event_tx_clone = event_tx.clone();
+        let event_recorder = recorder.clone();
         tokio::spawn(async move {
             loop {
                 let event = match mpv_events.recv().await {
@@ -78,9 +85,13 @@ impl PlaybackSession {
                         MpvEvent::RecordingState { is_recording, path } => {
                             state.is_recording = *is_recording;
                             state.recording_path = path.clone();
+                            state.recording_state_known = true;
                         }
                         MpvEvent::Error(error) => state.last_error = Some(error.clone()),
                     }
+                }
+                if let MpvEvent::RecordingState { path, .. } = &event {
+                    event_recorder.sync_active_path(path.clone()).await;
                 }
                 let _ = event_tx_clone.send(event);
             }
@@ -91,6 +102,7 @@ impl PlaybackSession {
             initial_events: Some(initial_events),
             event_tx,
             snapshot,
+            recorder,
         })
     }
 
@@ -143,6 +155,68 @@ impl PlaybackSession {
 
     pub async fn load_url(&self, url: &str) -> Result<()> {
         self.client.load_file(url).await
+    }
+
+    pub async fn recording_status(&self) -> Result<(bool, Option<std::path::PathBuf>)> {
+        if !self
+            .wait_for_recording_state(Duration::from_millis(500))
+            .await
+        {
+            return Err(crate::error::ResoError::Mpv(
+                "Timed out reading MPV recording state".to_string(),
+            ));
+        }
+        let snapshot = self.snapshot().await;
+        Ok((snapshot.is_recording, snapshot.recording_path))
+    }
+
+    pub async fn start_recording(
+        &self,
+        custom_path: Option<std::path::PathBuf>,
+    ) -> Result<std::path::PathBuf> {
+        let _ = self.recording_status().await?;
+        let snapshot = self.snapshot().await;
+        let station = snapshot
+            .current_station
+            .as_ref()
+            .map(|station| station.name.as_str())
+            .unwrap_or("Stream");
+        let track = snapshot.metadata.display_name();
+        self.recorder
+            .start_recording(station, Some(&track), custom_path)
+            .await
+    }
+
+    pub async fn stop_recording(&self) -> Result<Option<std::path::PathBuf>> {
+        let _ = self.recording_status().await?;
+        self.recorder.stop_recording().await
+    }
+
+    pub async fn toggle_recording(&self) -> Result<Option<std::path::PathBuf>> {
+        let (is_recording, _) = self.recording_status().await?;
+        if is_recording {
+            self.recorder.stop_recording().await
+        } else {
+            self.start_recording(None).await.map(Some)
+        }
+    }
+
+    async fn wait_for_recording_state(&self, timeout: Duration) -> bool {
+        let mut events = self.event_tx.subscribe();
+        if self.snapshot.read().await.recording_state_known {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                match events.recv().await {
+                    Ok(MpvEvent::RecordingState { .. }) => return true,
+                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => return false,
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
     }
 
     /// Lets MPV continue running after this session wrapper is dropped.

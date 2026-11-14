@@ -18,7 +18,6 @@ use crate::error::Result;
 use crate::events::AppAction;
 use crate::integration::clipboard::copy_to_clipboard;
 use crate::integration::mpris::start_mpris_server;
-use crate::mpv::record::StreamRecorder;
 use crossterm::event::{Event, EventStream};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -37,13 +36,10 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     // 1. Establish the owned playback process and IPC session.
     let mut playback_session =
         crate::session::PlaybackSession::connect(&config_manager.config).await?;
-    let mpv_client = playback_session.client();
     let mut mpv_rx = playback_session.subscribe();
     let initial_snapshot = playback_session.snapshot().await;
 
     // 3. Initialize Recorder & MPRIS
-    let recorder =
-        StreamRecorder::new(mpv_client.clone(), config_manager.config.record_dir.clone());
     let (action_tx, mut action_rx) = mpsc::channel::<AppAction>(64);
     let mpris_state = match start_mpris_server(action_tx.clone()).await {
         Ok(state) => Some(state),
@@ -60,12 +56,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(
-        config_manager,
-        recorder.clone(),
-        action_tx.clone(),
-        mpris_state,
-    );
+    let mut app = App::new(config_manager, action_tx.clone(), mpris_state);
     app.current_station = initial_snapshot.current_station;
     app.playback_state = initial_snapshot.playback_state;
     app.track_metadata = initial_snapshot.metadata;
@@ -157,25 +148,48 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         }
                     }
                     AppAction::ToggleRecord => {
-                        let st_name = app.current_station.as_ref().map(|s| s.name.as_str()).unwrap_or("Stream");
-                        let track_str = app.track_metadata.display_name();
-                        if let Ok(is_rec) = app.recorder.toggle(st_name, Some(&track_str)).await {
-                            if is_rec.is_some() {
-                                app.show_toast("🔴 Lossless recording started", crate::tui::app::ToastLevel::Warning);
-                            } else {
-                                app.show_toast("■ Recording saved to ~/Music/Radio/", crate::tui::app::ToastLevel::Success);
-                            }
+                        match playback_session.toggle_recording().await {
+                            Ok(Some(path)) => app.show_toast(
+                                format!("🔴 Recording started: {}", path.display()),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                            Ok(None) => app.show_toast(
+                                "Recording saved",
+                                crate::tui::app::ToastLevel::Success,
+                            ),
+                            Err(error) => app.show_toast(
+                                format!("Recording could not toggle: {error}"),
+                                crate::tui::app::ToastLevel::Error,
+                            ),
                         }
                     }
                     AppAction::StartRecord(p) => {
-                        let st_name = app.current_station.as_ref().map(|s| s.name.as_str()).unwrap_or("Stream");
-                        let track_str = app.track_metadata.display_name();
-                        let _ = app.recorder.start_recording(st_name, Some(&track_str), p).await;
-                        app.show_toast("🔴 Recording started", crate::tui::app::ToastLevel::Warning);
+                        match playback_session.start_recording(p).await {
+                            Ok(path) => app.show_toast(
+                                format!("🔴 Recording started: {}", path.display()),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                            Err(error) => app.show_toast(
+                                format!("Recording could not start: {error}"),
+                                crate::tui::app::ToastLevel::Error,
+                            ),
+                        }
                     }
                     AppAction::StopRecord => {
-                        let _ = app.recorder.stop_recording().await;
-                        app.show_toast("■ Recording saved to ~/Music/Radio/", crate::tui::app::ToastLevel::Success);
+                        match playback_session.stop_recording().await {
+                            Ok(Some(path)) => app.show_toast(
+                                format!("■ Recording saved: {}", path.display()),
+                                crate::tui::app::ToastLevel::Success,
+                            ),
+                            Ok(None) => app.show_toast(
+                                "No active recording was running",
+                                crate::tui::app::ToastLevel::Info,
+                            ),
+                            Err(error) => app.show_toast(
+                                format!("Could not stop recording: {error}"),
+                                crate::tui::app::ToastLevel::Error,
+                            ),
+                        }
                     }
                     AppAction::SetSleepTimer(dur) => {
                         app.sleep_timer_secs_remaining = dur.map(|d| d.as_secs());

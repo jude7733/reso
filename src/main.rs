@@ -20,7 +20,6 @@ use inspector::status::PipelineStatus;
 use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
 use integration::mpris::{start_mpris_server, sync_mpris_snapshot, MprisSnapshot, MprisState};
-use mpv::record::StreamRecorder;
 use std::process::Command;
 use std::sync::Arc;
 use tokio::signal;
@@ -646,37 +645,39 @@ async fn handle_record_command(
     output: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let playback_session = get_playback_session(config_manager).await?;
-    let client = playback_session.client();
-    let recorder = StreamRecorder::new(client, config_manager.config.record_dir.clone());
 
     match action {
         "start" => {
-            let path = recorder
-                .start_recording("Manual_Record", None, output)
-                .await?;
+            let path = playback_session.start_recording(output).await?;
             println!("🔴 Recording started -> {}", path.display());
         }
         "stop" => {
-            if let Some(prev) = recorder.stop_recording().await? {
+            if let Some(prev) = playback_session.stop_recording().await? {
                 println!("⏹ Recording stopped -> {}", prev.display());
             } else {
                 println!("No active recording was running.");
             }
         }
         "status" => {
-            if let Some(path) = recorder.active_path().await {
-                println!("🔴 Recording in progress -> {}", path.display());
+            let (is_recording, path) = playback_session.recording_status().await?;
+            if is_recording {
+                if let Some(path) = path {
+                    println!("🔴 Recording in progress -> {}", path.display());
+                } else {
+                    println!("🔴 Recording in progress.");
+                }
             } else {
                 println!("⏹ Not recording.");
             }
         }
         _ => {
-            if recorder.is_recording().await {
-                if let Some(prev) = recorder.stop_recording().await? {
+            let (is_recording, _) = playback_session.recording_status().await?;
+            if is_recording {
+                if let Some(prev) = playback_session.stop_recording().await? {
                     println!("⏹ Recording stopped -> {}", prev.display());
                 }
             } else {
-                let path = recorder.start_recording("Stream", None, output).await?;
+                let path = playback_session.start_recording(output).await?;
                 println!("🔴 Recording started -> {}", path.display());
             }
         }
@@ -1111,6 +1112,21 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                         events::AppAction::Stop => {
                             let _ = playback_session.stop().await;
                             sync_mpris_from_session(&playback_session, &mpris).await;
+                        }
+                        events::AppAction::ToggleRecord => {
+                            if let Err(error) = playback_session.toggle_recording().await {
+                                eprintln!("Recording toggle failed: {error}");
+                            }
+                        }
+                        events::AppAction::StartRecord(path) => {
+                            if let Err(error) = playback_session.start_recording(path).await {
+                                eprintln!("Recording start failed: {error}");
+                            }
+                        }
+                        events::AppAction::StopRecord => {
+                            if let Err(error) = playback_session.stop_recording().await {
+                                eprintln!("Recording stop failed: {error}");
+                            }
                         }
                         events::AppAction::SetVolume(volume) => {
                             let normalized = (volume / 100.0).clamp(0.0, 1.5);

@@ -36,6 +36,11 @@ impl StreamRecorder {
         self.current_recording.lock().await.clone()
     }
 
+    /// Synchronizes the local handle with MPV's observed `stream-record` property.
+    pub async fn sync_active_path(&self, path: Option<PathBuf>) {
+        *self.current_recording.lock().await = path;
+    }
+
     /// Starts recording the current stream.
     ///
     /// Constructs a filename: `~/Music/Radio/<Station>_<YYYYMMDD_HHMMSS>_<Track>.flac`.
@@ -45,6 +50,13 @@ impl StreamRecorder {
         track_info: Option<&str>,
         custom_path: Option<PathBuf>,
     ) -> Result<PathBuf> {
+        if let Some(active_path) = self.current_recording.lock().await.as_ref() {
+            return Err(crate::error::ResoError::Mpv(format!(
+                "A recording is already active: {}",
+                active_path.display()
+            )));
+        }
+
         let path = match custom_path {
             Some(p) => p,
             None => {

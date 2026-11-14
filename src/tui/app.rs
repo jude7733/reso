@@ -9,7 +9,6 @@ use crate::integration::clipboard::copy_to_clipboard;
 use crate::integration::mpris::{sync_mpris_snapshot, MprisSnapshot, MprisState};
 use crate::integration::prober::StreamProbeResult;
 use crate::integration::scrobbler::ScrobbleTracker;
-use crate::mpv::record::StreamRecorder;
 use crate::tui::cover::CoverArtManager;
 use crate::tui::theme::Theme;
 use crate::tui::visualizer::VisualizerState;
@@ -394,7 +393,6 @@ pub struct App {
 
     // Subsystems
     pub api_client: ApiClient,
-    pub recorder: StreamRecorder,
     pub scrobbler: ScrobbleTracker,
     pub mpris_state: Option<Arc<Mutex<MprisState>>>,
     pub action_tx: mpsc::Sender<AppAction>,
@@ -404,7 +402,6 @@ impl App {
     /// Initializes a new `App` state container.
     pub fn new(
         config_manager: ConfigManager,
-        recorder: StreamRecorder,
         action_tx: mpsc::Sender<AppAction>,
         mpris_state: Option<Arc<Mutex<MprisState>>>,
     ) -> Self {
@@ -496,7 +493,6 @@ impl App {
             theme,
             theme_last_mtime,
             api_client,
-            recorder,
             scrobbler,
             mpris_state,
             action_tx,
