@@ -4061,6 +4061,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     + / =               Increase hardware volume (wpctl)
     - / _               Decrease hardware volume (wpctl)
     m                   Toggle mute
+    H                   Check station endpoints in the background
 
   Station & Playlist Management (Vim-Style):
     a                   Add new station endpoint URL (probe & verify format)

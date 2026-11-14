@@ -365,6 +365,7 @@ pub struct App {
     pub search_results: Vec<Station>,
     pub search_results_index: usize,
     pub search_in_flight: bool,
+    pub station_health_check_in_flight: bool,
     pub search_list_state: ListState,
     pub search_input_active: bool,
     pub liked_tracks: Vec<LikedTrack>,
@@ -466,6 +467,7 @@ impl App {
             search_results: Vec::new(),
             search_results_index: 0,
             search_in_flight: false,
+            station_health_check_in_flight: false,
             search_list_state: ListState::default(),
             search_input_active: false,
             liked_tracks,
@@ -1111,6 +1113,12 @@ impl App {
 
             KeyCode::Char('R') if self.active_tab == ActiveTab::Search => {
                 self.refresh_search_results().await?;
+            }
+
+            KeyCode::Char('H') if !self.station_health_check_in_flight => {
+                self.station_health_check_in_flight = true;
+                let _ = self.action_tx.send(AppAction::CheckStations).await;
+                self.show_toast("Checking station endpoints…".to_string(), ToastLevel::Info);
             }
 
             // Edit Station ('e') on Stations tab

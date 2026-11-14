@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod clipboard;
+pub mod health;
 pub mod mpris;
 pub mod notifications;
 pub mod playlist;

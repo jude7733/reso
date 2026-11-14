@@ -1,6 +1,7 @@
 //! Central event definitions and asynchronous messaging channels for `reso`.
 
 use crate::config::Station;
+use crate::integration::health::StationHealthResult;
 use crate::integration::StreamProbeResult;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -96,6 +97,8 @@ pub enum AppAction {
     },
     ProbeStream(String),
     ProbeComplete(std::result::Result<StreamProbeResult, String>),
+    CheckStations,
+    StationHealthCheckComplete(std::result::Result<Vec<StationHealthResult>, String>),
     PlayPreview(String),
     RestorePreviousPlayback,
     UpdateStation(Station),

@@ -333,6 +333,57 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::ProbeComplete(res) => {
                         app.handle_probe_result(res);
                     }
+                    AppAction::CheckStations => {
+                        let stations = app.config_manager.catalog.stations.clone();
+                        let action_tx = app.action_tx.clone();
+                        tokio::spawn(async move {
+                            let result = crate::integration::health::check_stations(&stations).await;
+                            let _ = action_tx
+                                .send(AppAction::StationHealthCheckComplete(result))
+                                .await;
+                        });
+                    }
+                    AppAction::StationHealthCheckComplete(result) => {
+                        app.station_health_check_in_flight = false;
+                        match result {
+                            Ok(results) => {
+                                let checked = results.len();
+                                let failed = results
+                                    .iter()
+                                    .filter(|result| !result.is_reachable())
+                                    .collect::<Vec<_>>();
+                                if failed.is_empty() {
+                                    app.show_toast(
+                                        format!("All {checked} station endpoints are reachable"),
+                                        crate::tui::app::ToastLevel::Success,
+                                    );
+                                } else {
+                                    let names = failed
+                                        .iter()
+                                        .take(3)
+                                        .map(|result| result.station_name.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
+                                    let more = if failed.len() > 3 {
+                                        format!(" and {} more", failed.len() - 3)
+                                    } else {
+                                        String::new()
+                                    };
+                                    app.show_toast(
+                                        format!(
+                                            "{} of {checked} endpoints unreachable: {names}{more}. See `reso check` for details.",
+                                            failed.len()
+                                        ),
+                                        crate::tui::app::ToastLevel::Warning,
+                                    );
+                                }
+                            }
+                            Err(error) => app.show_toast(
+                                format!("Station health check failed: {error}"),
+                                crate::tui::app::ToastLevel::Error,
+                            ),
+                        }
+                    }
                     AppAction::PlayPreview(url) => {
                         let _ = playback_session.load_url(&url).await;
                     }

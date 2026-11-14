@@ -291,43 +291,27 @@ fn handle_config_command(config_manager: &ConfigManager) {
 }
 
 async fn handle_check_command(config_manager: &ConfigManager) -> Result<()> {
-    use futures_util::StreamExt;
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .user_agent("reso-radio-check/0.1")
-        .build()?;
-    let mut results = futures_util::stream::iter(config_manager.catalog.stations.iter().cloned())
-        .map(|station| {
-            let client = client.clone();
-            async move {
-                let result = client.get(&station.url).send().await;
-                (station.name, result)
-            }
-        })
-        .buffer_unordered(8)
-        .collect::<Vec<_>>()
-        .await;
-    results.sort_by(|left, right| left.0.cmp(&right.0));
-
+    let results = integration::health::check_stations(&config_manager.catalog.stations)
+        .await
+        .map_err(ResoError::Config)?;
     let mut reachable = 0;
     println!("Checking {} configured stations...", results.len());
-    for (name, result) in results {
-        match result {
-            Ok(response) if response.status().is_success() || response.status().as_u16() == 206 => {
-                reachable += 1;
-                println!(
-                    "OK   {:<40} HTTP {}",
-                    util::truncate_str(&name, 38),
-                    response.status()
-                );
-            }
-            Ok(response) => println!(
-                "FAIL {:<40} HTTP {}",
-                util::truncate_str(&name, 38),
-                response.status()
-            ),
-            Err(error) => println!("FAIL {:<40} {}", util::truncate_str(&name, 38), error),
+    for result in &results {
+        if result.is_reachable() {
+            reachable += 1;
+            println!(
+                "OK   {:<40} HTTP {} ({} ms)",
+                util::truncate_str(&result.station_name, 38),
+                result.status_code.unwrap_or_default(),
+                result.latency_ms
+            );
+        } else {
+            println!(
+                "FAIL {:<40} {} ({} ms)",
+                util::truncate_str(&result.station_name, 38),
+                result.error.as_deref().unwrap_or("Unknown endpoint error"),
+                result.latency_ms
+            );
         }
     }
     let total = config_manager.catalog.stations.len();
