@@ -9,13 +9,13 @@ use crate::integration::clipboard::copy_to_clipboard;
 use crate::integration::mpris::{sync_mpris_snapshot, MprisSnapshot, MprisState};
 use crate::integration::prober::StreamProbeResult;
 use crate::integration::scrobbler::ScrobbleTracker;
+use crate::session::HardwareVolumeState;
 use crate::tui::cover::CoverArtManager;
 use crate::tui::theme::Theme;
 use crate::tui::visualizer::VisualizerState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
@@ -444,7 +444,7 @@ impl App {
             .and_then(|p| std::fs::metadata(p).ok())
             .and_then(|m| m.modified().ok());
 
-        let mut app = Self {
+        let app = Self {
             active_tab: ActiveTab::Stations,
             config_manager,
             catalog,
@@ -498,7 +498,6 @@ impl App {
             action_tx,
         };
 
-        app.refresh_hardware_volume();
         app
     }
 
@@ -797,49 +796,9 @@ impl App {
         }
     }
 
-    /// Queries the active hardware volume and mute status from PipeWire via `wpctl`.
-    pub fn refresh_hardware_volume(&mut self) {
-        if let Ok(output) = Command::new("wpctl")
-            .arg("get-volume")
-            .arg("@DEFAULT_AUDIO_SINK@")
-            .output()
-        {
-            if output.status.success() {
-                let s = String::from_utf8_lossy(&output.stdout);
-                self.is_muted = s.contains("[MUTED]");
-                if let Some(vol_part) = s.split_whitespace().nth(1) {
-                    if let Ok(v) = vol_part.parse::<f64>() {
-                        self.hardware_volume = v.clamp(0.0, 1.5);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Adjusts hardware volume up or down via `wpctl`.
-    pub fn adjust_hardware_volume(&mut self, delta: f64) {
-        let arg = if delta > 0.0 {
-            format!("{:.0}%+", delta.abs() * 100.0)
-        } else {
-            format!("{:.0}%-", delta.abs() * 100.0)
-        };
-        let _ = Command::new("wpctl")
-            .arg("set-volume")
-            .arg("@DEFAULT_AUDIO_SINK@")
-            .arg(&arg)
-            .output();
-        self.refresh_hardware_volume();
-        self.update_mpris();
-    }
-
-    /// Toggles hardware mute via `wpctl`.
-    pub fn toggle_hardware_mute(&mut self) {
-        let _ = Command::new("wpctl")
-            .arg("set-mute")
-            .arg("@DEFAULT_AUDIO_SINK@")
-            .arg("toggle")
-            .output();
-        self.refresh_hardware_volume();
+    pub fn update_hardware_volume(&mut self, state: HardwareVolumeState) {
+        self.hardware_volume = state.volume;
+        self.is_muted = state.is_muted;
         self.update_mpris();
     }
 
@@ -1133,13 +1092,13 @@ impl App {
 
             // Volume
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.adjust_hardware_volume(0.05);
+                let _ = self.action_tx.send(AppAction::VolumeUp).await;
             }
             KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.adjust_hardware_volume(-0.05);
+                let _ = self.action_tx.send(AppAction::VolumeDown).await;
             }
             KeyCode::Char('m') => {
-                self.toggle_hardware_mute();
+                let _ = self.action_tx.send(AppAction::ToggleMute).await;
             }
 
             // Recording & Liking

@@ -10,6 +10,7 @@ use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::process::Output;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
 
@@ -23,7 +24,9 @@ pub struct PlaybackSnapshot {
     pub playback_state: PlaybackState,
     pub metadata: TrackMetadata,
     pub audio_params: AudioStreamParams,
-    pub volume: f64,
+    pub mpv_volume: f64,
+    pub hardware_volume: f64,
+    pub is_muted: bool,
     pub is_recording: bool,
     pub recording_path: Option<std::path::PathBuf>,
     pub recording_state_known: bool,
@@ -37,13 +40,22 @@ impl Default for PlaybackSnapshot {
             playback_state: PlaybackState::Stopped,
             metadata: TrackMetadata::default(),
             audio_params: AudioStreamParams::default(),
-            volume: 100.0,
+            mpv_volume: 100.0,
+            hardware_volume: 0.5,
+            is_muted: false,
             is_recording: false,
             recording_path: None,
             recording_state_known: false,
             last_error: None,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct HardwareVolumeState {
+    pub volume: f64,
+    pub is_muted: bool,
+    pub status: String,
 }
 
 pub struct PlaybackSession {
@@ -81,7 +93,7 @@ impl PlaybackSession {
                         MpvEvent::State(playback_state) => state.playback_state = *playback_state,
                         MpvEvent::Metadata(metadata) => state.metadata = metadata.clone(),
                         MpvEvent::AudioParams(params) => state.audio_params = params.clone(),
-                        MpvEvent::Volume(volume) => state.volume = *volume,
+                        MpvEvent::Volume(volume) => state.mpv_volume = *volume,
                         MpvEvent::RecordingState { is_recording, path } => {
                             state.is_recording = *is_recording;
                             state.recording_path = path.clone();
@@ -157,6 +169,62 @@ impl PlaybackSession {
         self.client.load_file(url).await
     }
 
+    pub async fn refresh_hardware_volume(&self) -> Result<HardwareVolumeState> {
+        let output = run_wpctl(&["get-volume", "@DEFAULT_AUDIO_SINK@"]).await?;
+        let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let volume = status
+            .split_whitespace()
+            .nth(1)
+            .and_then(|value| value.parse::<f64>().ok())
+            .ok_or_else(|| {
+                crate::error::ResoError::PipeWire(format!("Invalid wpctl output: {status}"))
+            })?
+            .clamp(0.0, 1.5);
+        let state = HardwareVolumeState {
+            volume,
+            is_muted: status.contains("[MUTED]"),
+            status,
+        };
+        {
+            let mut snapshot = self.snapshot.write().await;
+            snapshot.hardware_volume = state.volume;
+            snapshot.is_muted = state.is_muted;
+        }
+        Ok(state)
+    }
+
+    pub async fn adjust_hardware_volume(&self, delta: f64) -> Result<HardwareVolumeState> {
+        if !delta.is_finite() {
+            return Err(ResoError::PipeWire(
+                "Hardware volume adjustment must be finite".to_string(),
+            ));
+        }
+        let arg = if delta >= 0.0 {
+            format!("{:.0}%+", delta * 100.0)
+        } else {
+            format!("{:.0}%-", delta.abs() * 100.0)
+        };
+        run_wpctl(&["set-volume", "@DEFAULT_AUDIO_SINK@", &arg]).await?;
+        self.refresh_hardware_volume().await
+    }
+
+    pub async fn set_hardware_volume_percent(&self, percent: f64) -> Result<HardwareVolumeState> {
+        if !percent.is_finite() {
+            return Err(ResoError::PipeWire(
+                "Hardware volume must be finite".to_string(),
+            ));
+        }
+        let normalized = (percent / 100.0).clamp(0.0, 1.5);
+        let arg = format!("{normalized:.2}");
+        run_wpctl(&["set-volume", "@DEFAULT_AUDIO_SINK@", &arg]).await?;
+        self.refresh_hardware_volume().await
+    }
+
+    pub async fn toggle_hardware_mute(&self) -> Result<HardwareVolumeState> {
+        run_wpctl(&["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"]).await?;
+        self.refresh_hardware_volume().await
+    }
+
     pub async fn recording_status(&self) -> Result<(bool, Option<std::path::PathBuf>)> {
         if !self
             .wait_for_recording_state(Duration::from_millis(500))
@@ -223,6 +291,22 @@ impl PlaybackSession {
     pub fn disown_process(&mut self) {
         self.process.disown();
     }
+}
+
+async fn run_wpctl(args: &[&str]) -> Result<Output> {
+    let output = tokio::process::Command::new("wpctl")
+        .args(args)
+        .output()
+        .await?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(crate::error::ResoError::PipeWire(if message.is_empty() {
+            format!("wpctl {} failed", args.join(" "))
+        } else {
+            message
+        }));
+    }
+    Ok(output)
 }
 
 pub struct SessionLock {

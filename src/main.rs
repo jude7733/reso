@@ -20,7 +20,6 @@ use inspector::status::PipelineStatus;
 use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
 use integration::mpris::{start_mpris_server, sync_mpris_snapshot, MprisSnapshot, MprisState};
-use std::process::Command;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::{mpsc, Mutex};
@@ -148,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Volume(args)) => {
-            handle_volume_command(&args.action)?;
+            handle_volume_command(&config_manager, &args.action).await?;
         }
 
         Some(Commands::Config) => {
@@ -342,19 +341,6 @@ async fn handle_check_command(config_manager: &ConfigManager) -> Result<()> {
     Ok(())
 }
 
-fn read_hardware_volume() -> Option<f64> {
-    let output = Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let output = String::from_utf8_lossy(&output.stdout);
-    let volume = output.split_whitespace().nth(1)?.parse::<f64>().ok()?;
-    Some(volume.clamp(0.0, 1.5) * 100.0)
-}
-
 fn handle_import_command(mut config_manager: ConfigManager, path: &std::path::Path) -> Result<()> {
     let count = integration::playlist::import_playlist(path, &mut config_manager.catalog)?;
     config_manager.save_stations()?;
@@ -515,7 +501,7 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
     let playback_session = get_playback_session(config_manager).await?;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     let snapshot = playback_session.snapshot().await;
-    let status = PipelineStatus::evaluate(&snapshot.audio_params, snapshot.volume, None);
+    let status = PipelineStatus::evaluate(&snapshot.audio_params, snapshot.mpv_volume, None);
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
@@ -989,69 +975,34 @@ async fn handle_copy_command(_config_manager: &ConfigManager) -> Result<()> {
 }
 
 /// Handles `reso volume`.
-fn handle_volume_command(action: &str) -> Result<()> {
-    match action {
-        "get" => {
-            let out = Command::new("wpctl")
-                .arg("get-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .output()?;
-            print!("{}", String::from_utf8_lossy(&out.stdout));
-        }
-        "up" => {
-            let _ = Command::new("wpctl")
-                .arg("set-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .arg("5%+")
-                .output()?;
-            let out = Command::new("wpctl")
-                .arg("get-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .output()?;
-            print!("{}", String::from_utf8_lossy(&out.stdout));
-        }
-        "down" => {
-            let _ = Command::new("wpctl")
-                .arg("set-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .arg("5%-")
-                .output()?;
-            let out = Command::new("wpctl")
-                .arg("get-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .output()?;
-            print!("{}", String::from_utf8_lossy(&out.stdout));
-        }
-        "mute" => {
-            let _ = Command::new("wpctl")
-                .arg("set-mute")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .arg("toggle")
-                .output()?;
-            let out = Command::new("wpctl")
-                .arg("get-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .output()?;
-            print!("{}", String::from_utf8_lossy(&out.stdout));
-        }
-        val => {
-            let arg = if val.ends_with('%') {
-                val.to_string()
+async fn handle_volume_command(config_manager: &ConfigManager, action: &str) -> Result<()> {
+    let playback_session = get_playback_session(config_manager).await?;
+    let state = match action {
+        "get" => playback_session.refresh_hardware_volume().await?,
+        "up" => playback_session.adjust_hardware_volume(0.05).await?,
+        "down" => playback_session.adjust_hardware_volume(-0.05).await?,
+        "mute" => playback_session.toggle_hardware_mute().await?,
+        value => {
+            let numeric = value
+                .trim_end_matches('%')
+                .parse::<f64>()
+                .map_err(|_| ResoError::Config(format!("Invalid hardware volume: {value}")))?;
+            if !numeric.is_finite() {
+                return Err(ResoError::Config(
+                    "Hardware volume must be a finite number".to_string(),
+                ));
+            }
+            let percent = if value.ends_with('%') || numeric > 1.5 {
+                numeric
             } else {
-                format!("{}%", val)
+                numeric * 100.0
             };
-            let _ = Command::new("wpctl")
-                .arg("set-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .arg(&arg)
-                .output()?;
-            let out = Command::new("wpctl")
-                .arg("get-volume")
-                .arg("@DEFAULT_AUDIO_SINK@")
-                .output()?;
-            print!("{}", String::from_utf8_lossy(&out.stdout));
+            playback_session
+                .set_hardware_volume_percent(percent)
+                .await?
         }
-    }
+    };
+    println!("{}", state.status);
     Ok(())
 }
 
@@ -1061,7 +1012,11 @@ async fn sync_mpris_from_session(
     mpris: &Arc<Mutex<MprisState>>,
 ) {
     let snapshot = playback_session.snapshot().await;
-    let volume = read_hardware_volume().unwrap_or(snapshot.volume);
+    let volume = playback_session
+        .refresh_hardware_volume()
+        .await
+        .map(|state| state.volume * 100.0)
+        .unwrap_or(snapshot.hardware_volume * 100.0);
     sync_mpris_snapshot(mpris, MprisSnapshot::from_playback(&snapshot, volume)).await;
 }
 
@@ -1073,7 +1028,11 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     let initial_snapshot = playback_session.snapshot().await;
     let (action_tx, mut action_rx) = mpsc::channel::<events::AppAction>(64);
     let mpris = start_mpris_server(action_tx).await?;
-    let initial_volume = read_hardware_volume().unwrap_or(initial_snapshot.volume);
+    let initial_volume = playback_session
+        .refresh_hardware_volume()
+        .await
+        .map(|state| state.volume * 100.0)
+        .unwrap_or(initial_snapshot.hardware_volume * 100.0);
     sync_mpris_snapshot(
         &mpris,
         MprisSnapshot::from_playback(&initial_snapshot, initial_volume),
@@ -1129,11 +1088,7 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                             }
                         }
                         events::AppAction::SetVolume(volume) => {
-                            let normalized = (volume / 100.0).clamp(0.0, 1.5);
-                            let result = Command::new("wpctl")
-                                .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{normalized:.2}")])
-                                .output();
-                            if result.is_ok() {
+                            if playback_session.set_hardware_volume_percent(volume).await.is_ok() {
                                 sync_mpris_from_session(&playback_session, &mpris).await;
                             }
                         }

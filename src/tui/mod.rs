@@ -64,6 +64,9 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
     app.is_recording = initial_snapshot.is_recording;
     app.active_recording_path = initial_snapshot.recording_path;
     app.visualizer_state.is_playing = app.playback_state == crate::events::PlaybackState::Playing;
+    if let Ok(volume) = playback_session.refresh_hardware_volume().await {
+        app.update_hardware_volume(volume);
+    }
     app.update_mpris();
 
     let mut event_stream = EventStream::new();
@@ -195,23 +198,40 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         app.sleep_timer_secs_remaining = dur.map(|d| d.as_secs());
                     }
                     AppAction::VolumeUp => {
-                        app.adjust_hardware_volume(0.05);
+                        match playback_session.adjust_hardware_volume(0.05).await {
+                            Ok(volume) => app.update_hardware_volume(volume),
+                            Err(error) => app.show_toast(
+                                format!("Volume adjustment failed: {error}"),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                        }
                     }
                     AppAction::VolumeDown => {
-                        app.adjust_hardware_volume(-0.05);
+                        match playback_session.adjust_hardware_volume(-0.05).await {
+                            Ok(volume) => app.update_hardware_volume(volume),
+                            Err(error) => app.show_toast(
+                                format!("Volume adjustment failed: {error}"),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                        }
                     }
                     AppAction::SetVolume(vol) => {
-                        let v = (vol / 100.0).clamp(0.0, 1.5);
-                        let _ = std::process::Command::new("wpctl")
-                            .arg("set-volume")
-                            .arg("@DEFAULT_AUDIO_SINK@")
-                            .arg(format!("{:.2}", v))
-                            .output();
-                        app.refresh_hardware_volume();
-                        app.update_mpris();
+                        match playback_session.set_hardware_volume_percent(vol).await {
+                            Ok(volume) => app.update_hardware_volume(volume),
+                            Err(error) => app.show_toast(
+                                format!("Volume update failed: {error}"),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                        }
                     }
                     AppAction::ToggleMute => {
-                        app.toggle_hardware_mute();
+                        match playback_session.toggle_hardware_mute().await {
+                            Ok(volume) => app.update_hardware_volume(volume),
+                            Err(error) => app.show_toast(
+                                format!("Mute toggle failed: {error}"),
+                                crate::tui::app::ToastLevel::Warning,
+                            ),
+                        }
                     }
                     AppAction::BookmarkTrack => {
                         let st_name = app.current_station.as_ref().map(|s| s.name.clone()).unwrap_or_else(|| "Reso".to_string());
