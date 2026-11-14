@@ -104,6 +104,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                         let _ = playback_session.play_station(&station).await;
                         let name = station.name.clone();
                         app.current_station = Some(station);
+                        app.track_metadata = Default::default();
                         app.track_started_at = Some(std::time::Instant::now());
                         app.show_toast(format!("▶ Tuning in: {}", name), crate::tui::app::ToastLevel::Info);
                         app.update_mpris();
@@ -120,6 +121,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                     AppAction::Stop => {
                         let _ = playback_session.stop().await;
                         app.current_station = None;
+                        app.track_metadata = Default::default();
                         app.track_started_at = None;
                         app.visualizer_state.stop_capture();
                         app.update_mpris();
@@ -130,6 +132,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             app.station_list_index = (app.station_list_index + 1) % total;
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = playback_session.play_station(&st).await;
+                            app.track_metadata = Default::default();
                             app.track_started_at = Some(std::time::Instant::now());
                             app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
@@ -146,6 +149,7 @@ pub async fn run_tui(config_manager: ConfigManager) -> Result<()> {
                             }
                             let st = app.catalog.stations[app.station_list_index].clone();
                             let _ = playback_session.play_station(&st).await;
+                            app.track_metadata = Default::default();
                             app.track_started_at = Some(std::time::Instant::now());
                             app.show_toast(format!("▶ {}", st.name), crate::tui::app::ToastLevel::Info);
                             app.current_station = Some(st);
