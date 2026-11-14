@@ -65,6 +65,11 @@ pub async fn sync_mpris_snapshot(state: &Arc<Mutex<MprisState>>, snapshot: Mpris
     state.emit_properties_changed().await;
 }
 
+async fn dispatch_action(state: &Arc<Mutex<MprisState>>, action: AppAction) {
+    let action_tx = state.lock().await.action_tx.clone();
+    let _ = action_tx.send(action).await;
+}
+
 impl MprisState {
     pub async fn emit_properties_changed(&self) {
         if let Some(connection) = &self.connection {
@@ -107,8 +112,7 @@ impl ResoMprisRoot {
     async fn raise(&self) {}
 
     async fn quit(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::Quit).await;
+        dispatch_action(&self.state, AppAction::Quit).await;
     }
 
     #[zbus(property)]
@@ -161,33 +165,27 @@ impl ResoMprisPlayer {
 #[interface(name = "org.mpris.MediaPlayer2.Player")]
 impl ResoMprisPlayer {
     async fn next(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::NextStation).await;
+        dispatch_action(&self.state, AppAction::NextStation).await;
     }
 
     async fn previous(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::PrevStation).await;
+        dispatch_action(&self.state, AppAction::PrevStation).await;
     }
 
     async fn pause(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::Pause).await;
+        dispatch_action(&self.state, AppAction::Pause).await;
     }
 
     async fn play_pause(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::TogglePause).await;
+        dispatch_action(&self.state, AppAction::TogglePause).await;
     }
 
     async fn stop(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::Stop).await;
+        dispatch_action(&self.state, AppAction::Stop).await;
     }
 
     async fn play(&self) {
-        let lock = self.state.lock().await;
-        let _ = lock.action_tx.send(AppAction::Resume).await;
+        dispatch_action(&self.state, AppAction::Resume).await;
     }
 
     #[zbus(property)]
@@ -273,11 +271,11 @@ impl ResoMprisPlayer {
         if !vol.is_finite() {
             return;
         }
-        let lock = self.state.lock().await;
-        let _ = lock
-            .action_tx
-            .send(AppAction::SetVolume(vol.clamp(0.0, 1.5) * 100.0))
-            .await;
+        dispatch_action(
+            &self.state,
+            AppAction::SetVolume(vol.clamp(0.0, 1.5) * 100.0),
+        )
+        .await;
     }
 
     #[zbus(property)]
