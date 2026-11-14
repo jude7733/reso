@@ -470,8 +470,14 @@ async fn handle_play_command(
             }
             _ = async {
                 while let Ok(ev) = rx.recv().await {
-                    if let events::MpvEvent::Metadata(m) = ev {
-                        println!("♪ Now Playing: {}", m.display_name());
+                    match ev {
+                        events::MpvEvent::Metadata(metadata) => {
+                            println!("♪ Now Playing: {}", metadata.display_name());
+                        }
+                        events::MpvEvent::Error(error) => {
+                            eprintln!("Playback error: {error}");
+                        }
+                        _ => {}
                     }
                 }
             } => {}
@@ -510,6 +516,26 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
         println!("=================================================================");
         println!("                     RESO CURRENT PLAYBACK                       ");
         println!("=================================================================");
+        println!(
+            "Station:           {}",
+            snapshot
+                .current_station
+                .as_ref()
+                .map(|station| station.name.as_str())
+                .unwrap_or("None")
+        );
+        println!(
+            "Playback State:    {}",
+            match snapshot.playback_state {
+                events::PlaybackState::Stopped => "Stopped",
+                events::PlaybackState::Buffering => "Buffering",
+                events::PlaybackState::Playing => "Playing",
+                events::PlaybackState::Paused => "Paused",
+            }
+        );
+        if let Some(error) = &snapshot.last_error {
+            println!("Last Error:        {error}");
+        }
         println!(
             "Source Codec:      {}",
             if status.source_codec.is_empty() {
