@@ -19,6 +19,52 @@ pub struct MprisState {
     pub connection: Option<zbus::Connection>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MprisSnapshot {
+    pub playback_state: PlaybackState,
+    pub track_metadata: TrackMetadata,
+    pub station_name: String,
+    pub volume: f64,
+}
+
+impl MprisSnapshot {
+    pub fn new(
+        playback_state: PlaybackState,
+        track_metadata: TrackMetadata,
+        station_name: String,
+        volume: f64,
+    ) -> Self {
+        Self {
+            playback_state,
+            track_metadata,
+            station_name,
+            volume,
+        }
+    }
+
+    pub fn from_playback(snapshot: &crate::session::PlaybackSnapshot, volume: f64) -> Self {
+        Self::new(
+            snapshot.playback_state,
+            snapshot.metadata.clone(),
+            snapshot
+                .current_station
+                .as_ref()
+                .map(|station| station.name.clone())
+                .unwrap_or_else(|| "Reso Radio".to_string()),
+            volume,
+        )
+    }
+}
+
+pub async fn sync_mpris_snapshot(state: &Arc<Mutex<MprisState>>, snapshot: MprisSnapshot) {
+    let mut state = state.lock().await;
+    state.playback_state = snapshot.playback_state;
+    state.track_metadata = snapshot.track_metadata;
+    state.station_name = snapshot.station_name;
+    state.volume = snapshot.volume;
+    state.emit_properties_changed().await;
+}
+
 impl MprisState {
     pub async fn emit_properties_changed(&self) {
         if let Some(connection) = &self.connection {

@@ -19,11 +19,12 @@ use events::AudioStreamParams;
 use inspector::status::PipelineStatus;
 use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
-use integration::mpris::start_mpris_server;
+use integration::mpris::{start_mpris_server, sync_mpris_snapshot, MprisSnapshot, MprisState};
 use mpv::record::StreamRecorder;
 use std::process::Command;
+use std::sync::Arc;
 use tokio::signal;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use util::{format_duration, format_sample_rate, parse_duration_str};
 
 #[tokio::main]
@@ -1054,6 +1055,15 @@ fn handle_volume_command(action: &str) -> Result<()> {
 }
 
 /// Handles `reso daemon`.
+async fn sync_mpris_from_session(
+    playback_session: &session::PlaybackSession,
+    mpris: &Arc<Mutex<MprisState>>,
+) {
+    let snapshot = playback_session.snapshot().await;
+    let volume = read_hardware_volume().unwrap_or(snapshot.volume);
+    sync_mpris_snapshot(mpris, MprisSnapshot::from_playback(&snapshot, volume)).await;
+}
+
 async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     println!("Launching Reso background daemon (MPV + MPRIS2)...");
     let _session_lock = session::SessionLock::acquire(&config_manager.config.socket_path)?;
@@ -1062,18 +1072,12 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
     let initial_snapshot = playback_session.snapshot().await;
     let (action_tx, mut action_rx) = mpsc::channel::<events::AppAction>(64);
     let mpris = start_mpris_server(action_tx).await?;
-    {
-        let mut state = mpris.lock().await;
-        state.playback_state = initial_snapshot.playback_state;
-        state.station_name = initial_snapshot
-            .current_station
-            .as_ref()
-            .map(|station| station.name.clone())
-            .unwrap_or_else(|| "Reso Radio".to_string());
-        state.track_metadata = initial_snapshot.metadata.clone();
-        state.volume = read_hardware_volume().unwrap_or(initial_snapshot.volume);
-        state.emit_properties_changed().await;
-    }
+    let initial_volume = read_hardware_volume().unwrap_or(initial_snapshot.volume);
+    sync_mpris_snapshot(
+        &mpris,
+        MprisSnapshot::from_playback(&initial_snapshot, initial_volume),
+    )
+    .await;
 
     println!("✓ Reso daemon active. MPRIS2 interface exposed on D-Bus.");
     println!("Press Ctrl+C to terminate daemon.");
@@ -1099,26 +1103,22 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                         events::AppAction::Play(st) => {
                             let _ = playback_session.play_station(&st).await;
                             current_station_index = config_manager.catalog.stations.iter().position(|station| station.id == st.id);
-                            let mut state = mpris.lock().await;
-                            state.station_name = st.name;
-                            state.track_metadata = events::TrackMetadata::default();
-                            state.emit_properties_changed().await;
+                            sync_mpris_from_session(&playback_session, &mpris).await;
                         }
                         events::AppAction::Pause => { let _ = playback_session.pause().await; }
                         events::AppAction::Resume => { let _ = playback_session.resume().await; }
                         events::AppAction::TogglePause => { let _ = playback_session.toggle_pause().await; }
-                        events::AppAction::Stop => { let _ = playback_session.stop().await; }
+                        events::AppAction::Stop => {
+                            let _ = playback_session.stop().await;
+                            sync_mpris_from_session(&playback_session, &mpris).await;
+                        }
                         events::AppAction::SetVolume(volume) => {
                             let normalized = (volume / 100.0).clamp(0.0, 1.5);
                             let result = Command::new("wpctl")
                                 .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &format!("{normalized:.2}")])
                                 .output();
                             if result.is_ok() {
-                                if let Some(volume) = read_hardware_volume() {
-                                    let mut state = mpris.lock().await;
-                                    state.volume = volume;
-                                    state.emit_properties_changed().await;
-                                }
+                                sync_mpris_from_session(&playback_session, &mpris).await;
                             }
                         }
                         action @ (events::AppAction::NextStation | events::AppAction::PrevStation) => {
@@ -1134,28 +1134,24 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                                 let station = &stations[index];
                                 let _ = playback_session.play_station(station).await;
                                 current_station_index = Some(index);
-                                let mut state = mpris.lock().await;
-                                state.station_name = station.name.clone();
-                                state.track_metadata = events::TrackMetadata::default();
-                                state.emit_properties_changed().await;
+                                sync_mpris_from_session(&playback_session, &mpris).await;
                             }
                         }
                         events::AppAction::Quit => break,
                         _ => {}
                     },
                     Ok(event) = mpv_rx.recv() => {
-                        let mut state = mpris.lock().await;
                         match event {
-                            events::MpvEvent::State(playback) => {
-                                state.playback_state = playback;
-                                state.emit_properties_changed().await;
+                            events::MpvEvent::State(_) | events::MpvEvent::Volume(_) => {
+                                sync_mpris_from_session(&playback_session, &mpris).await;
                             }
                             events::MpvEvent::Metadata(metadata) => {
-                                let changed = state.track_metadata.display_name() != metadata.display_name();
-                                let station = state.station_name.clone();
-                                state.track_metadata = metadata.clone();
-                                state.emit_properties_changed().await;
-                                drop(state);
+                                let (old_title, station) = {
+                                    let state = mpris.lock().await;
+                                    (state.track_metadata.display_name(), state.station_name.clone())
+                                };
+                                let changed = old_title != metadata.display_name();
+                                sync_mpris_from_session(&playback_session, &mpris).await;
                                 if changed && config_manager.config.notifications.enabled
                                     && config_manager.config.notifications.track_changes
                                     && (metadata.title.is_some() || metadata.raw_title.is_some())
@@ -1167,12 +1163,7 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                                     }
                                 }
                             }
-                            events::MpvEvent::Volume(volume) => {
-                                state.volume = volume;
-                                state.emit_properties_changed().await;
-                            }
                             events::MpvEvent::Error(error) => {
-                                drop(state);
                                 if config_manager.config.notifications.enabled && config_manager.config.notifications.errors {
                                     if let Err(error) = integration::notifications::notify("Reso playback error", &error).await {
                                         eprintln!("Desktop notification unavailable: {error}");
@@ -1180,7 +1171,6 @@ async fn handle_daemon_command(config_manager: ConfigManager) -> Result<()> {
                                 }
                             }
                             events::MpvEvent::RecordingState { is_recording, .. } => {
-                                drop(state);
                                 if config_manager.config.notifications.enabled && config_manager.config.notifications.recording {
                                     let title = if is_recording { "Recording started" } else { "Recording saved" };
                                     if let Err(error) = integration::notifications::notify(title, "Reso radio stream").await {

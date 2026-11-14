@@ -6,7 +6,7 @@ use crate::events::{AppAction, AudioStreamParams, MpvEvent, PlaybackState, Track
 use crate::inspector::status::PipelineStatus;
 use crate::integration::api::ApiClient;
 use crate::integration::clipboard::copy_to_clipboard;
-use crate::integration::mpris::MprisState;
+use crate::integration::mpris::{sync_mpris_snapshot, MprisSnapshot, MprisState};
 use crate::integration::prober::StreamProbeResult;
 use crate::integration::scrobbler::ScrobbleTracker;
 use crate::mpv::record::StreamRecorder;
@@ -2604,22 +2604,18 @@ impl App {
     pub fn update_mpris(&self) {
         if let Some(state_arc) = &self.mpris_state {
             let state_clone = state_arc.clone();
-            let pb = self.playback_state;
-            let meta = self.track_metadata.clone();
-            let st_name = self
-                .current_station
-                .as_ref()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "Reso Radio".to_string());
-            let vol = self.hardware_volume * 100.0;
+            let snapshot = MprisSnapshot::new(
+                self.playback_state,
+                self.track_metadata.clone(),
+                self.current_station
+                    .as_ref()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Reso Radio".to_string()),
+                self.hardware_volume * 100.0,
+            );
 
             tokio::spawn(async move {
-                let mut lock = state_clone.lock().await;
-                lock.playback_state = pb;
-                lock.track_metadata = meta;
-                lock.station_name = st_name;
-                lock.volume = vol;
-                lock.emit_properties_changed().await;
+                sync_mpris_snapshot(&state_clone, snapshot).await;
             });
         }
     }
