@@ -4131,7 +4131,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     e / c               Edit selected station parameters (codec, sample rate, bits, tags)
     d / x               Delete selected station / liked track (with confirmation)
     U                   Restore hidden bundled stations
-    S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec)
+    S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec, Tags)
     f                   Toggle favorite on selected station
     y / c               Yank / Copy station stream URL or track title to clipboard
     r                   Toggle lossless stream recording (~/Music/Radio/)

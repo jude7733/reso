@@ -183,6 +183,7 @@ pub enum StationSortMode {
     NameAsc,
     NameDesc,
     Codec,
+    Tags,
 }
 
 impl StationSortMode {
@@ -194,6 +195,7 @@ impl StationSortMode {
             StationSortMode::NameAsc => "Name (A-Z)",
             StationSortMode::NameDesc => "Name (Z-A)",
             StationSortMode::Codec => "Codec",
+            StationSortMode::Tags => "Tags (A-Z)",
         }
     }
 
@@ -204,7 +206,8 @@ impl StationSortMode {
             StationSortMode::FavoritesFirst => StationSortMode::NameAsc,
             StationSortMode::NameAsc => StationSortMode::NameDesc,
             StationSortMode::NameDesc => StationSortMode::Codec,
-            StationSortMode::Codec => StationSortMode::Default,
+            StationSortMode::Codec => StationSortMode::Tags,
+            StationSortMode::Tags => StationSortMode::Default,
         }
     }
 
@@ -215,6 +218,7 @@ impl StationSortMode {
             "name_asc" | "name" | "az" => StationSortMode::NameAsc,
             "name_desc" | "za" => StationSortMode::NameDesc,
             "codec" => StationSortMode::Codec,
+            "tags" | "tag" => StationSortMode::Tags,
             _ => StationSortMode::Default,
         }
     }
@@ -227,6 +231,7 @@ impl StationSortMode {
             StationSortMode::NameAsc => "name_asc",
             StationSortMode::NameDesc => "name_desc",
             StationSortMode::Codec => "codec",
+            StationSortMode::Tags => "tags",
         }
     }
 }
@@ -910,6 +915,27 @@ impl App {
                     score(&stations[a].codec)
                         .cmp(&score(&stations[b].codec))
                         .then_with(|| stations[b].sample_rate.cmp(&stations[a].sample_rate))
+                        .then_with(|| {
+                            stations[a]
+                                .name
+                                .to_lowercase()
+                                .cmp(&stations[b].name.to_lowercase())
+                        })
+                });
+            }
+            StationSortMode::Tags => {
+                let primary_tag = |station: &Station| {
+                    station
+                        .tags
+                        .iter()
+                        .map(|tag| tag.trim().to_lowercase())
+                        .filter(|tag| !tag.is_empty())
+                        .min()
+                        .unwrap_or_default()
+                };
+                indices.sort_by(|&a, &b| {
+                    primary_tag(&stations[a])
+                        .cmp(&primary_tag(&stations[b]))
                         .then_with(|| {
                             stations[a]
                                 .name
