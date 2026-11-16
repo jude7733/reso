@@ -13,7 +13,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState,
+    ScrollbarOrientation, ScrollbarState, Wrap,
 };
 use ratatui::Frame;
 
@@ -21,18 +21,29 @@ use ratatui::Frame;
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
-    let viz_height = if app.config_manager.config.ui.show_visualizer {
-        4
-    } else {
-        0
-    };
+    if area.width < 50 || area.height < 16 {
+        let message = Paragraph::new("Resize terminal to at least 50 columns × 16 rows")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(app.theme.text_dim));
+        let message_area = Rect {
+            x: area.x,
+            y: area.y + area.height.saturating_sub(1) / 2,
+            width: area.width,
+            height: 1.min(area.height),
+        };
+        f.render_widget(message, message_area);
+        return;
+    }
+
+    let show_visualizer = app.config_manager.config.ui.show_visualizer && area.height >= 22;
+    let viz_height = if show_visualizer { 4 } else { 0 };
 
     // Main layout: Header, Body, Visualizer/Footer
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),          // Header & Badges
-            Constraint::Min(12),            // Main Dashboard Body
+            Constraint::Min(1),             // Main Dashboard Body
             Constraint::Length(viz_height), // Spectrum Visualizer
             Constraint::Length(1),          // Keybinds footer
         ])
@@ -40,7 +51,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     render_header(f, app, main_chunks[0]);
     render_body(f, app, main_chunks[1]);
-    if app.config_manager.config.ui.show_visualizer {
+    if show_visualizer {
         render_visualizer(f, app, main_chunks[2]);
     }
     render_footer(f, app, main_chunks[3]);
@@ -362,12 +373,14 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
         app.station_list_state.select(Some(app.station_list_index));
     }
 
+    let compact = area.height < 12;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(8),    // Stations List
-            Constraint::Length(4), // Selected Station Tags & Info Card
-        ])
+        .constraints(if compact {
+            [Constraint::Min(1), Constraint::Length(0)]
+        } else {
+            [Constraint::Min(8), Constraint::Length(4)]
+        })
         .split(area);
 
     let items: Vec<ListItem> = filtered_indices
@@ -483,6 +496,10 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_stateful_widget(list_widget, chunks[0], &mut app.station_list_state);
 
+    if chunks[1].height == 0 {
+        return;
+    }
+
     let visible_height = chunks[0].height.saturating_sub(2) as usize;
     if total_len > visible_height {
         let mut scrollbar_state = ScrollbarState::new(total_len).position(app.station_list_index);
@@ -555,8 +572,13 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
 
 /// Renders the right pane: Unified Now Playing (music player showcase) + Audiophile Diagnostics.
 fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
+    if area.height < 16 {
+        render_now_playing(f, app, area);
+        return;
+    }
+
     let diag_height = if area.height >= 20 { 6 } else { 5 };
-    let player_height = area.height.saturating_sub(diag_height).max(8);
+    let player_height = area.height.saturating_sub(diag_height);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -800,7 +822,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Artist & Album info
     let mut artist_spans = Vec::new();
-    if let Some(art) = artist_name {
+    if let Some(art) = artist_name.clone() {
         if !art.trim().is_empty() && art != "—" && art != "-" {
             artist_spans.push(Span::styled("♪ ", Style::default().fg(Color::Green)));
             artist_spans.push(Span::styled(
@@ -832,6 +854,32 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
     if let Some(badge) = quality_badge {
         format_spans.push(Span::raw(" "));
         format_spans.push(badge);
+    }
+
+    if inner_area.height < 7 {
+        let mut lines = vec![
+            Line::from(format!(
+                "{} · {}",
+                match app.playback_state {
+                    PlaybackState::Playing => "Playing",
+                    PlaybackState::Paused => "Paused",
+                    PlaybackState::Buffering => "Buffering",
+                    PlaybackState::Stopped => "Stopped",
+                },
+                station_name
+            )),
+            Line::from(Span::styled(
+                track_title,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+        ];
+        if let Some(artist) = artist_name {
+            lines.push(Line::from(artist));
+        }
+        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner_area);
+        return;
     }
 
     // Adaptive Layout: Classic Left-Anchored Player when wide enough, vertical stack when narrow
@@ -1107,6 +1155,21 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
 
 /// Renders the bottom keybindings status bar or active toast notification.
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
+    if area.width < 80 && app.toast.is_none() {
+        let hint = if area.width < 58 {
+            "Space Play/Pause · n/p Station · ? Help"
+        } else {
+            "Space Play/Pause · n/p Station · +/- Volume · ? Help"
+        };
+        f.render_widget(
+            Paragraph::new(hint)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::DarkGray)),
+            area,
+        );
+        return;
+    }
+
     if let Some(ref toast) = app.toast {
         let (fg, bg, icon) = match toast.level {
             ToastLevel::Success => (Color::White, Color::Rgb(0, 140, 60), " ✓ "),
