@@ -216,6 +216,8 @@ When running the interactive TUI (`reso`):
 | `d` / `x` | Remove a station or liked track (bundled stations can be restored with `U`) |
 | `f` | Toggle Favorite status on selected station |
 | `S` | Cycle station sorting mode |
+| `P` | Manage saved station filter presets |
+| `H` | Check station endpoints in the background |
 | `R` | Refresh current Radio-Browser search results |
 | `U` | Restore hidden bundled stations |
 | `r` | Toggle Lossless Stream Recording (`~/Music/Radio/`) |
@@ -223,7 +225,7 @@ When running the interactive TUI (`reso`):
 | `y` / `c` | Copy station URL / current track information |
 | `+` / `-` | Increase / Decrease Hardware Volume (`wpctl`) |
 | `m` | Toggle Hardware Mute (`wpctl`) |
-| `/` | Focus search / filter input |
+| `/` | Filter the Stations catalog, or focus Radio-Browser search from another view |
 | `Ctrl+P` / `Ctrl+K` | Open searchable command palette |
 | `1` | Switch to **Stations Catalog** view |
 | `2` | Switch to **Radio-Browser Search** view |
@@ -233,6 +235,8 @@ When running the interactive TUI (`reso`):
 | `Tab` / `BackTab` | Cycle between views |
 | `?` | Toggle Help & Shortcuts overlay |
 | `q` / `Esc` | Quit `reso` |
+
+In the Stations view, enter a filter with `/`. Terms match station names, codecs, and tags; use `name:`, `codec:`, or `tag:` to target a field. Multiple terms combine, for example `tag:lossless codec:flac`. Press `P` to save the current filter, apply a saved preset, or delete one. Presets are stored in `config.toml`.
 
 ---
 

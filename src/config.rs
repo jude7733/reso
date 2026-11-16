@@ -184,6 +184,31 @@ impl AppConfig {
                 self.ui.cover_mode
             )));
         }
+        if self.ui.station_filter_presets.len() > 50 {
+            return Err(ResoError::Config(
+                "at most 50 station filter presets are allowed".to_string(),
+            ));
+        }
+        let mut preset_names = std::collections::HashSet::new();
+        for preset in &self.ui.station_filter_presets {
+            let name = preset.name.trim();
+            let query = preset.query.trim();
+            if name.is_empty() || name.len() > 50 {
+                return Err(ResoError::Config(
+                    "station filter preset names must contain 1 to 50 characters".to_string(),
+                ));
+            }
+            if query.is_empty() || query.len() > 256 {
+                return Err(ResoError::Config(
+                    "station filter preset queries must contain 1 to 256 characters".to_string(),
+                ));
+            }
+            if !preset_names.insert(name.to_lowercase()) {
+                return Err(ResoError::Config(format!(
+                    "duplicate station filter preset name: {name}"
+                )));
+            }
+        }
         Ok(())
     }
 }
@@ -248,9 +273,19 @@ pub struct UiConfig {
     #[serde(default = "default_theme_reload_interval")]
     pub theme_reload_interval_secs: u64,
 
-    /// Default station list sorting mode ("favorites", "default", "quality", "name_asc", "name_desc", "codec").
+    /// Default station list sorting mode ("favorites", "default", "quality", "name_asc", "name_desc", "codec", "tags").
     #[serde(default = "default_sort_mode")]
     pub default_sort_mode: String,
+
+    /// Named station catalog filters available from the TUI.
+    #[serde(default)]
+    pub station_filter_presets: Vec<StationFilterPreset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StationFilterPreset {
+    pub name: String,
+    pub query: String,
 }
 
 fn default_true() -> bool {
@@ -284,6 +319,7 @@ impl Default for UiConfig {
             theme_auto_reload: true,
             theme_reload_interval_secs: default_theme_reload_interval(),
             default_sort_mode: default_sort_mode(),
+            station_filter_presets: Vec::new(),
         }
     }
 }

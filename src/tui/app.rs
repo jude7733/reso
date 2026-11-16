@@ -151,6 +151,14 @@ pub enum ModalState {
         track_id: String,
         track_title: String,
     },
+    StationFilterPresets {
+        selected: usize,
+        confirm_delete: bool,
+    },
+    SaveStationFilterPreset {
+        name_input: String,
+        query: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -366,6 +374,7 @@ pub struct App {
     pub active_recording_path: Option<PathBuf>,
     pub sleep_timer_secs_remaining: Option<u64>,
     pub filter_query: String,
+    pub station_filter_active: bool,
     pub search_query: String,
     pub search_results: Vec<Station>,
     pub search_results_index: usize,
@@ -468,6 +477,7 @@ impl App {
             active_recording_path: None,
             sleep_timer_secs_remaining: None,
             filter_query: String::new(),
+            station_filter_active: false,
             search_query: String::new(),
             search_results: Vec::new(),
             search_results_index: 0,
@@ -1037,6 +1047,34 @@ impl App {
             return Ok(());
         }
 
+        if self.station_filter_active {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.station_filter_active = false,
+                KeyCode::Backspace => {
+                    self.filter_query.pop();
+                    self.station_list_index = 0;
+                    self.invalidate_station_cache();
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.filter_query.clear();
+                    self.station_list_index = 0;
+                    self.invalidate_station_cache();
+                }
+                KeyCode::Char(character)
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                        && self.filter_query.len() < 256 =>
+                {
+                    self.filter_query.push(character);
+                    self.station_list_index = 0;
+                    self.invalidate_station_cache();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         // 3. Settings Tab specific keyboard routing
         if self.active_tab == ActiveTab::Settings {
             return self.handle_settings_key_event(key).await;
@@ -1141,6 +1179,12 @@ impl App {
                 self.station_health_check_in_flight = true;
                 let _ = self.action_tx.send(AppAction::CheckStations).await;
                 self.show_toast("Checking station endpoints…".to_string(), ToastLevel::Info);
+            }
+            KeyCode::Char('P') if self.active_tab == ActiveTab::Stations => {
+                self.modal_state = ModalState::StationFilterPresets {
+                    selected: 0,
+                    confirm_delete: false,
+                };
             }
 
             // Edit Station ('e') on Stations tab
@@ -1352,8 +1396,12 @@ impl App {
             },
 
             KeyCode::Char('/') => {
-                self.active_tab = ActiveTab::Search;
-                self.search_input_active = true;
+                if self.active_tab == ActiveTab::Stations {
+                    self.station_filter_active = true;
+                } else {
+                    self.active_tab = ActiveTab::Search;
+                    self.search_input_active = true;
+                }
             }
 
             // Up / Down navigation (j / k / arrows)
@@ -1626,6 +1674,179 @@ impl App {
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Char('c') => {
                     self.modal_state = ModalState::None;
+                }
+                _ => {}
+            },
+
+            ModalState::StationFilterPresets {
+                selected,
+                confirm_delete,
+            } => {
+                let presets = self.config_manager.config.ui.station_filter_presets.clone();
+                if *confirm_delete {
+                    match key.code {
+                        KeyCode::Char('y') => {
+                            let old_presets =
+                                self.config_manager.config.ui.station_filter_presets.clone();
+                            let mut toast_message = None;
+                            if *selected < old_presets.len() {
+                                let removed = old_presets[*selected].name.clone();
+                                self.config_manager
+                                    .config
+                                    .ui
+                                    .station_filter_presets
+                                    .remove(*selected);
+                                match self.config_manager.save_config() {
+                                    Ok(()) => {
+                                        toast_message = Some((
+                                            format!("Removed filter preset: {removed}"),
+                                            ToastLevel::Info,
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        self.config_manager.config.ui.station_filter_presets =
+                                            old_presets;
+                                        toast_message = Some((
+                                            format!("Could not remove preset: {error}"),
+                                            ToastLevel::Error,
+                                        ));
+                                    }
+                                }
+                            }
+                            *confirm_delete = false;
+                            *selected = (*selected).min(
+                                self.config_manager
+                                    .config
+                                    .ui
+                                    .station_filter_presets
+                                    .len()
+                                    .saturating_sub(1),
+                            );
+                            if let Some((message, level)) = toast_message {
+                                self.show_toast(message, level);
+                            }
+                        }
+                        KeyCode::Esc | KeyCode::Char('n') => *confirm_delete = false,
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Esc => self.modal_state = ModalState::None,
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            *selected = selected.saturating_sub(1);
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if !presets.is_empty() {
+                                *selected = (*selected + 1).min(presets.len() - 1);
+                            }
+                        }
+                        KeyCode::Enter if !presets.is_empty() => {
+                            let preset = presets[*selected].clone();
+                            self.filter_query = preset.query;
+                            self.station_list_index = 0;
+                            self.station_filter_active = false;
+                            self.active_tab = ActiveTab::Stations;
+                            self.invalidate_station_cache();
+                            self.modal_state = ModalState::None;
+                            self.show_toast(
+                                format!("Applied filter preset: {}", preset.name),
+                                ToastLevel::Info,
+                            );
+                        }
+                        KeyCode::Char('a') if !self.filter_query.trim().is_empty() => {
+                            self.modal_state = ModalState::SaveStationFilterPreset {
+                                name_input: String::new(),
+                                query: self.filter_query.trim().to_string(),
+                            };
+                        }
+                        KeyCode::Char('d') if !presets.is_empty() => *confirm_delete = true,
+                        _ => {}
+                    }
+                }
+            }
+
+            ModalState::SaveStationFilterPreset { name_input, query } => match key.code {
+                KeyCode::Esc => {
+                    self.modal_state = ModalState::StationFilterPresets {
+                        selected: 0,
+                        confirm_delete: false,
+                    }
+                }
+                KeyCode::Backspace => {
+                    name_input.pop();
+                }
+                KeyCode::Enter => {
+                    let name = name_input.trim().to_string();
+                    if name.is_empty() {
+                        self.show_toast(
+                            "Preset name cannot be empty".to_string(),
+                            ToastLevel::Warning,
+                        );
+                    } else if name.len() > 50 {
+                        self.show_toast(
+                            "Preset name must be 50 characters or fewer".to_string(),
+                            ToastLevel::Warning,
+                        );
+                    } else if self
+                        .config_manager
+                        .config
+                        .ui
+                        .station_filter_presets
+                        .iter()
+                        .any(|preset| preset.name.eq_ignore_ascii_case(&name))
+                    {
+                        self.show_toast(
+                            "A filter preset with that name already exists".to_string(),
+                            ToastLevel::Warning,
+                        );
+                    } else if self.config_manager.config.ui.station_filter_presets.len() >= 50 {
+                        self.show_toast(
+                            "The maximum of 50 filter presets has been reached".to_string(),
+                            ToastLevel::Warning,
+                        );
+                    } else {
+                        let old_presets =
+                            self.config_manager.config.ui.station_filter_presets.clone();
+                        self.config_manager.config.ui.station_filter_presets.push(
+                            crate::config::StationFilterPreset {
+                                name: name.clone(),
+                                query: query.clone(),
+                            },
+                        );
+                        match self.config_manager.save_config() {
+                            Ok(()) => {
+                                self.modal_state = ModalState::StationFilterPresets {
+                                    selected: self
+                                        .config_manager
+                                        .config
+                                        .ui
+                                        .station_filter_presets
+                                        .len()
+                                        - 1,
+                                    confirm_delete: false,
+                                };
+                                self.show_toast(
+                                    format!("Saved filter preset: {name}"),
+                                    ToastLevel::Success,
+                                );
+                            }
+                            Err(error) => {
+                                self.config_manager.config.ui.station_filter_presets = old_presets;
+                                self.show_toast(
+                                    format!("Could not save preset: {error}"),
+                                    ToastLevel::Error,
+                                );
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char(character)
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                        && name_input.len() < 50 =>
+                {
+                    name_input.push(character);
                 }
                 _ => {}
             },

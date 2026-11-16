@@ -68,8 +68,138 @@ pub fn render(f: &mut Frame, app: &mut App) {
         ModalState::ConfirmDeleteLiked { track_title, .. } => {
             render_confirm_delete_liked_modal(f, track_title, area);
         }
+        ModalState::StationFilterPresets {
+            selected,
+            confirm_delete,
+        } => render_station_filter_presets(f, app, *selected, *confirm_delete, area),
+        ModalState::SaveStationFilterPreset { name_input, query } => {
+            render_save_station_filter_preset(f, app, name_input, query, area);
+        }
         ModalState::None => {}
     }
+}
+
+fn render_station_filter_presets(
+    f: &mut Frame,
+    app: &App,
+    selected: usize,
+    confirm_delete: bool,
+    area: Rect,
+) {
+    let width = 68.min(area.width.saturating_sub(4)).max(1);
+    let height = 16.min(area.height.saturating_sub(2)).max(1);
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    let inner = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(if confirm_delete {
+            " Delete station filter preset? (y/N) "
+        } else {
+            " Saved station filter presets "
+        })
+        .border_style(Style::default().fg(Color::Cyan));
+    let content_area = inner.inner(popup);
+    f.render_widget(inner, popup);
+    if content_area.height == 0 {
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .split(content_area);
+    let presets = &app.config_manager.config.ui.station_filter_presets;
+    let items = if presets.is_empty() {
+        vec![ListItem::new(
+            "No presets saved. Press a to save the current filter.",
+        )]
+    } else {
+        presets
+            .iter()
+            .map(|preset| ListItem::new(format!("{}  ·  {}", preset.name, preset.query)))
+            .collect()
+    };
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("› ");
+    let mut list_state = ListState::default();
+    if !presets.is_empty() {
+        list_state.select(Some(selected.min(presets.len() - 1)));
+    }
+    f.render_stateful_widget(list, chunks[0], &mut list_state);
+    let instructions = if confirm_delete {
+        "y: delete · n/Esc: cancel"
+    } else {
+        "Enter: apply · a: save current filter · d: delete · Esc: close"
+    };
+    let footer = app
+        .toast
+        .as_ref()
+        .map(|toast| toast.message.as_str())
+        .unwrap_or(instructions);
+    f.render_widget(
+        Paragraph::new(footer)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(if app.toast.is_some() {
+                Color::Yellow
+            } else {
+                Color::Gray
+            })),
+        chunks[1],
+    );
+}
+
+fn render_save_station_filter_preset(
+    f: &mut Frame,
+    app: &App,
+    name_input: &str,
+    query: &str,
+    area: Rect,
+) {
+    let width = 68.min(area.width.saturating_sub(4)).max(1);
+    let height = 8.min(area.height.saturating_sub(2)).max(1);
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    let lines = vec![
+        Line::from("Preset name (1–50 characters):"),
+        Line::from(format!("› {}▏", name_input)),
+        Line::raw(""),
+        Line::from(format!("Filter: {query}")),
+        Line::from(
+            app.toast
+                .as_ref()
+                .map(|toast| toast.message.as_str())
+                .unwrap_or("Enter: save · Esc: cancel"),
+        ),
+    ];
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" Save station filter preset ")
+                    .border_style(Style::default().fg(Color::Cyan)),
+            )
+            .wrap(Wrap { trim: true }),
+        popup,
+    );
 }
 
 fn render_command_palette(f: &mut Frame, state: &CommandPaletteState, area: Rect) {
@@ -360,7 +490,9 @@ fn render_body(f: &mut Frame, app: &mut App, area: Rect) {
 
 /// Renders the station catalog list on the left with selected station details & tags.
 fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let is_focused = app.active_tab == ActiveTab::Stations && !app.search_input_active;
+    let is_focused = app.active_tab == ActiveTab::Stations
+        && !app.search_input_active
+        && !app.station_filter_active;
     let filtered_indices: Vec<usize> = app.filtered_station_indices().to_vec();
     let total_len = filtered_indices.len();
 
@@ -463,12 +595,17 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         app.theme.border
     };
-    let title = if !app.filter_query.is_empty() {
+    let filter_label = if app.station_filter_active {
+        format!("{}▏", app.filter_query)
+    } else {
+        app.filter_query.clone()
+    };
+    let title = if !app.filter_query.is_empty() || app.station_filter_active {
         format!(
             " Stations ({}/{}) [Filter: \"{}\"] [Sort: {}] ",
             total_len,
             app.catalog.stations.len(),
-            app.filter_query,
+            filter_label,
             app.station_sort_mode.display_label()
         )
     } else {
@@ -1155,6 +1292,18 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
 
 /// Renders the bottom keybindings status bar or active toast notification.
 fn render_footer(f: &mut Frame, app: &App, area: Rect) {
+    if app.station_filter_active {
+        f.render_widget(
+            Paragraph::new(
+                "Type to filter by name, codec, or tag · Enter: done · Esc: finish · Ctrl+U: clear",
+            )
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Cyan)),
+            area,
+        );
+        return;
+    }
+
     if area.width < 80 && app.toast.is_none() {
         let hint = if area.width < 58 {
             "Space Play/Pause · n/p Station · ? Help"
@@ -4132,12 +4281,14 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     d / x               Delete selected station / liked track (with confirmation)
     U                   Restore hidden bundled stations
     S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec, Tags)
+    P                   Save, apply, or delete a station filter preset
     f                   Toggle favorite on selected station
     y / c               Yank / Copy station stream URL or track title to clipboard
     r                   Toggle lossless stream recording (~/Music/Radio/)
     l                   Like / Bookmark playing track (~/.config/reso/liked_tracks.toml)
-    /                   Search Radio-Browser catalog / filter stations
+    /                   Filter stations (Stations tab) or open Radio-Browser search
                         Filter fields: tag:lossless codec:flac name:radio (terms combine)
+                        Enter/Esc: finish filter · Ctrl+U: clear · P: manage presets
     R                   Refresh the current Radio-Browser search query
 
   Navigation & Views:
