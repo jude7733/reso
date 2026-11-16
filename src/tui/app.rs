@@ -847,11 +847,7 @@ impl App {
                 .stations
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| {
-                    s.name.to_lowercase().contains(&q)
-                        || s.codec.to_lowercase().contains(&q)
-                        || s.tags.iter().any(|t| t.to_lowercase().contains(&q))
-                })
+                .filter(|(_, station)| station_matches_filter(station, &q))
                 .map(|(i, _)| i)
                 .collect()
         };
@@ -2678,6 +2674,31 @@ impl App {
             }
         }
     }
+}
+
+fn station_matches_filter(station: &Station, query: &str) -> bool {
+    query.split_whitespace().all(|term| {
+        if let Some(value) = term.strip_prefix("tag:") {
+            return !value.is_empty()
+                && station
+                    .tags
+                    .iter()
+                    .any(|tag| tag.to_lowercase().contains(value));
+        }
+        if let Some(value) = term.strip_prefix("codec:") {
+            return !value.is_empty() && station.codec.to_lowercase().contains(value);
+        }
+        if let Some(value) = term.strip_prefix("name:") {
+            return !value.is_empty() && station.name.to_lowercase().contains(value);
+        }
+
+        station.name.to_lowercase().contains(term)
+            || station.codec.to_lowercase().contains(term)
+            || station
+                .tags
+                .iter()
+                .any(|tag| tag.to_lowercase().contains(term))
+    })
 }
 
 fn filtered_palette_commands(query: &str) -> Vec<usize> {

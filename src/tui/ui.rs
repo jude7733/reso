@@ -4137,6 +4137,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     r                   Toggle lossless stream recording (~/Music/Radio/)
     l                   Like / Bookmark playing track (~/.config/reso/liked_tracks.toml)
     /                   Search Radio-Browser catalog / filter stations
+                        Filter fields: tag:lossless codec:flac name:radio (terms combine)
     R                   Refresh the current Radio-Browser search query
 
   Navigation & Views:
