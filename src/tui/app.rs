@@ -1180,6 +1180,30 @@ impl App {
                 let _ = self.action_tx.send(AppAction::CheckStations).await;
                 self.show_toast("Checking station endpoints…".to_string(), ToastLevel::Info);
             }
+            KeyCode::Char('i') => {
+                let previous = self.config_manager.config.ui.show_audio_path;
+                self.config_manager.config.ui.show_audio_path = !previous;
+                match self.config_manager.save_config() {
+                    Ok(()) => self.show_toast(
+                        format!(
+                            "Dashboard audio path {}",
+                            if self.config_manager.config.ui.show_audio_path {
+                                "shown"
+                            } else {
+                                "hidden"
+                            }
+                        ),
+                        ToastLevel::Info,
+                    ),
+                    Err(error) => {
+                        self.config_manager.config.ui.show_audio_path = previous;
+                        self.show_toast(
+                            format!("Could not save audio path setting: {error}"),
+                            ToastLevel::Error,
+                        );
+                    }
+                }
+            }
             KeyCode::Char('P') if self.active_tab == ActiveTab::Stations => {
                 self.modal_state = ModalState::StationFilterPresets {
                     selected: 0,

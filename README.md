@@ -216,6 +216,7 @@ When running the interactive TUI (`reso`):
 | `d` / `x` | Remove a station or liked track (bundled stations can be restored with `U`) |
 | `f` | Toggle Favorite status on selected station |
 | `S` | Cycle station sorting mode |
+| `i` | Show or hide the dashboard audio-path diagnostic strip |
 | `P` | Manage saved station filter presets |
 | `H` | Check station endpoints in the background |
 | `R` | Refresh current Radio-Browser search results |

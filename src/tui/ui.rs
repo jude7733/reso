@@ -709,7 +709,7 @@ fn render_stations_list(f: &mut Frame, app: &mut App, area: Rect) {
 
 /// Renders the right pane: Unified Now Playing (music player showcase) + Audiophile Diagnostics.
 fn render_right_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    if area.height < 16 {
+    if !app.config_manager.config.ui.show_audio_path || area.height < 16 {
         render_now_playing(f, app, area);
         return;
     }
@@ -1348,6 +1348,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         ("e", "Edit"),
         ("d/x", "Del"),
         ("S", "Sort"),
+        ("i", "Path"),
         ("y/c", "Copy"),
         ("f", "Fav"),
         ("r", "Rec"),
@@ -4281,6 +4282,7 @@ fn render_help_modal(f: &mut Frame, app: &App, area: Rect) {
     d / x               Delete selected station / liked track (with confirmation)
     U                   Restore hidden bundled stations
     S                   Cycle station list sort mode (Default, Quality, Favs, A-Z, Codec, Tags)
+    i                   Toggle dashboard audio path diagnostics
     P                   Save, apply, or delete a station filter preset
     f                   Toggle favorite on selected station
     y / c               Yank / Copy station stream URL or track title to clipboard

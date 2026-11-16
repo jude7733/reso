@@ -250,6 +250,10 @@ pub struct UiConfig {
     #[serde(default = "default_true")]
     pub show_visualizer: bool,
 
+    /// Whether the dashboard shows the compact audio path diagnostic strip.
+    #[serde(default = "default_true")]
+    pub show_audio_path: bool,
+
     #[serde(default)]
     pub reduced_motion: bool,
 
@@ -312,6 +316,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_visualizer: true,
+            show_audio_path: true,
             reduced_motion: false,
             cover_mode: default_cover_mode(),
             theme: default_theme(),
