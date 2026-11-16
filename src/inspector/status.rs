@@ -8,10 +8,11 @@ use crate::inspector::pipewire::{inspect_pipewire_graph, CulpritClient, PipeWire
 use crate::util::format_sample_rate;
 use serde::{Deserialize, Serialize};
 
-/// Verdict on the bit-perfect fidelity of the audio pipeline.
+/// Assessment of the audio pipeline based on reported and measured data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BitPerfectVerdict {
-    /// Perfectly preserving native sample rate and bit depth.
+    /// Required format measurements are available; measured rates match the reference,
+    /// and no DSP or software attenuation was reported.
     NativeBitPerfect,
 
     /// Audio is being resampled due to graph or device rate mismatch.
@@ -45,9 +46,8 @@ pub struct PipelineStatus {
     pub source_bitrate_kbps: Option<u32>,
     pub mpv_volume: f64,
 
-    /// The station's configured native sample rate (ground truth).
-    /// This is the true media rate, unlike `source_rate` which is MPV's
-    /// negotiated output rate and may differ when PipeWire forces resampling.
+    /// The station catalog's nominal sample rate. This is metadata supplied by
+    /// the catalog and is not a measurement of the live stream.
     pub media_sample_rate: Option<u32>,
 
     // Stage 2: PipeWire Graph
@@ -68,17 +68,16 @@ pub struct PipelineStatus {
 }
 
 impl PipelineStatus {
-    /// Returns the reference sample rate: prefers `media_sample_rate` (ground truth from config)
-    /// if present and non-zero, falling back to MPV's `source_rate`.
+    /// Returns the comparison rate: prefers the station's nominal catalog rate,
+    /// falling back to MPV's observed output rate.
     pub fn reference_rate(&self) -> u32 {
         self.media_sample_rate.unwrap_or(self.source_rate)
     }
 
     /// Evaluates the complete 3-stage audio pipeline.
     ///
-    /// `media_sample_rate` is the station's configured native sample rate (ground truth).
-    /// This is used instead of MPV's `audio-params.samplerate` which may reflect a
-    /// negotiated output rate when PipeWire forces the graph to a different clock.
+    /// `media_sample_rate` is the station's nominal catalog rate. MPV's
+    /// `audio-params.samplerate` reports the decoder's negotiated output rate.
     pub fn evaluate(
         stream_params: &AudioStreamParams,
         mpv_volume: f64,
@@ -95,8 +94,8 @@ impl PipelineStatus {
             ..Default::default()
         };
 
-        // The reference rate for pipeline checks: prefer the station's known
-        // media rate over MPV's negotiated output rate.
+        // Prefer the station's nominal catalog rate when available; keep the
+        // separately observed MPV output rate for explicit comparison.
         let reference_rate = status.media_sample_rate.unwrap_or(status.source_rate);
 
         // If no source stream is active
@@ -105,8 +104,7 @@ impl PipelineStatus {
             return status;
         }
 
-        // Query PipeWire — pass the TRUE media rate so culprit detection
-        // correctly identifies streams locking the graph away from it.
+        // Compare the graph against the catalog's nominal rate when present.
         if let Ok(pw_report) = inspect_pipewire_graph(Some(reference_rate)) {
             if let Some(sink) = &pw_report.active_sink {
                 status.pw_sink_rate = sink.active_rate;
@@ -145,12 +143,12 @@ impl PipelineStatus {
         status
     }
 
-    /// Determines the bit-perfect verdict based on the 3 stages.
+    /// Determines the pipeline assessment based on measurements from the 3 stages.
     ///
-    /// Uses the station's known media sample rate as the reference (ground truth)
-    /// rather than MPV's negotiated output rate, which can be changed by PipeWire.
+    /// Uses the station's nominal catalog rate as the comparison reference when
+    /// available. The measured MPV output rate remains separately visible.
     fn calculate_verdict(&self) -> BitPerfectVerdict {
-        // The reference rate: station config (ground truth) > MPV output rate.
+        // The comparison rate: station catalog metadata > observed MPV rate.
         let reference_rate = self.media_sample_rate.unwrap_or(self.source_rate);
 
         if reference_rate == 0 {
@@ -171,8 +169,8 @@ impl PipelineStatus {
             };
         }
 
-        // 3. Cross-check: if media rate is known and MPV's output rate differs,
-        //    MPV itself was forced to resample (e.g. PipeWire negotiated a different rate).
+        // 3. Cross-check the measured MPV output rate against the station's
+        //    nominal catalog rate. The catalog value is not itself measured.
         if let Some(media_rate) = self.media_sample_rate {
             if self.source_rate != 0 && self.source_rate != media_rate {
                 let culprit = self.pw_culprits.first().cloned();
@@ -187,7 +185,7 @@ impl PipelineStatus {
         // 4. Check PipeWire sink rate vs reference rate.
         //    Only compare when pw_sink_rate is actually known — do NOT
         //    fallback to source_rate, which hides mismatches.
-        if let Some(sink_rate) = self.pw_sink_rate {
+        if let Some(sink_rate) = self.pw_sink_rate.filter(|rate| *rate > 0) {
             if sink_rate != reference_rate {
                 let culprit = self.pw_culprits.first().cloned();
                 return BitPerfectVerdict::Resampled {
@@ -200,7 +198,7 @@ impl PipelineStatus {
 
         // 5. Check ALSA DAC rate vs reference rate
         if let Some(hw) = &self.alsa_hw_params {
-            if let Some(alsa_rate) = hw.rate {
+            if let Some(alsa_rate) = hw.rate.filter(|rate| *rate > 0) {
                 if alsa_rate != reference_rate {
                     return BitPerfectVerdict::Resampled {
                         source_rate: reference_rate,
@@ -212,19 +210,48 @@ impl PipelineStatus {
         }
 
         let mut missing_stages = Vec::new();
+        if self.source_codec.is_empty() {
+            missing_stages.push("MPV decoder codec".to_string());
+        }
         if self.source_rate == 0 {
             missing_stages.push("MPV decoder rate".to_string());
         }
-        if self.pw_sink_rate.is_none() {
+        if self.source_bit_depth.is_none() {
+            missing_stages.push("MPV decoder bit depth".to_string());
+        }
+        if self.pw_sink_rate.map_or(true, |rate| rate == 0) {
             missing_stages.push("PipeWire sink rate".to_string());
+        }
+        if self
+            .pw_sink
+            .as_ref()
+            .and_then(|sink| sink.format.as_ref())
+            .is_none()
+        {
+            missing_stages.push("PipeWire sink format".to_string());
         }
         if self
             .alsa_hw_params
             .as_ref()
             .and_then(|params| params.rate)
-            .is_none()
+            .map_or(true, |rate| rate == 0)
         {
             missing_stages.push("ALSA hardware rate".to_string());
+        }
+        if self
+            .alsa_hw_params
+            .as_ref()
+            .map_or(true, |params| !params.is_active)
+        {
+            missing_stages.push("active ALSA playback stream".to_string());
+        }
+        if self
+            .alsa_hw_params
+            .as_ref()
+            .and_then(|params| params.format.as_ref())
+            .is_none()
+        {
+            missing_stages.push("ALSA hardware format".to_string());
         }
         if !missing_stages.is_empty() {
             return BitPerfectVerdict::Unverified { missing_stages };
@@ -250,33 +277,41 @@ impl PipelineStatus {
                 &self.source_codec
             }
         ));
-        // Show the true media rate when it differs from MPV's output rate
-        let media_rate = self.media_sample_rate.unwrap_or(self.source_rate);
-        out.push_str(&format!(
-            "   Sample Rate:  {}\n",
-            format_sample_rate(media_rate)
-        ));
-        if self.media_sample_rate.is_some()
-            && self.source_rate != media_rate
-            && self.source_rate > 0
-        {
+        if let Some(catalog_rate) = self.media_sample_rate {
             out.push_str(&format!(
-                "   MPV Output:   {} (negotiated by PipeWire)\n",
-                format_sample_rate(self.source_rate)
+                "   Catalog Rate (nominal): {}\n",
+                format_sample_rate(catalog_rate)
+            ));
+            out.push_str(&format!(
+                "   MPV Output (observed):  {}\n",
+                if self.source_rate > 0 {
+                    format_sample_rate(self.source_rate)
+                } else {
+                    "Not reported".to_string()
+                }
+            ));
+        } else {
+            out.push_str(&format!(
+                "   MPV Rate (observed):   {}\n",
+                if self.source_rate > 0 {
+                    format_sample_rate(self.source_rate)
+                } else {
+                    "Not reported".to_string()
+                }
             ));
         }
         out.push_str(&format!(
             "   Bit Depth:    {}\n",
             self.source_bit_depth
                 .map(|b| format!("{}-bit", b))
-                .unwrap_or_else(|| "16/24-bit VBR".to_string())
+                .unwrap_or_else(|| "Not reported".to_string())
         ));
         out.push_str(&format!(
             "   Channels:     {}\n",
             if self.source_channels == 0 {
-                2
+                "Not reported".to_string()
             } else {
-                self.source_channels
+                format!("{}", self.source_channels)
             }
         ));
         out.push_str(&format!(
@@ -293,11 +328,14 @@ impl PipelineStatus {
             ));
             out.push_str(&format!(
                 "   Sink Rate:    {}\n",
-                format_sample_rate(self.pw_sink_rate.unwrap_or(0))
+                self.pw_sink_rate
+                    .filter(|rate| *rate > 0)
+                    .map(format_sample_rate)
+                    .unwrap_or_else(|| "Not reported".to_string())
             ));
             out.push_str(&format!(
                 "   Sink Format:  {}\n",
-                sink.format.as_deref().unwrap_or("Native")
+                sink.format.as_deref().unwrap_or("Not reported")
             ));
         } else {
             out.push_str("   Sink Node:    None detected\n");
@@ -309,7 +347,7 @@ impl PipelineStatus {
                 self.pw_dsp_filters
             ));
         } else {
-            out.push_str("   DSP Filters:  None (Bit-exact path)\n");
+            out.push_str("   DSP Filters:  None reported\n");
         }
         out.push('\n');
 
@@ -330,7 +368,10 @@ impl PipelineStatus {
             ));
             out.push_str(&format!(
                 "   HW Rate:      {}\n",
-                format_sample_rate(hw.rate.unwrap_or(0))
+                hw.rate
+                    .filter(|rate| *rate > 0)
+                    .map(format_sample_rate)
+                    .unwrap_or_else(|| "Not reported".to_string())
             ));
             out.push_str(&format!(
                 "   HW Format:    {}\n",
@@ -357,19 +398,20 @@ impl PipelineStatus {
         out.push_str("=================================================================\n");
         match &self.verdict {
             Some(BitPerfectVerdict::NativeBitPerfect) => {
-                out.push_str(" STATUS: [ PASS ] ✓ BIT-PERFECT DIRECT PLAYBACK\n");
+                out.push_str(" STATUS: [ PASS ] ✓ VERIFIED NATIVE PATH\n");
                 out.push_str(
-                    " Native source rate matches PipeWire sink and hardware DAC clocks.\n",
+                    " Required formats are reported, and measured sample rates match the reference.\n",
                 );
+                out.push_str(" No software attenuation or detected PipeWire DSP was reported.\n");
             }
             Some(BitPerfectVerdict::Resampled {
                 source_rate,
                 sink_rate,
                 culprit,
             }) => {
-                out.push_str(" STATUS: [ WARNING ] ⚠ RESAMPLING DETECTED\n");
+                out.push_str(" STATUS: [ WARNING ] ⚠ RATE MISMATCH DETECTED\n");
                 out.push_str(&format!(
-                    " Stream ({} Hz) is being resampled to ({} Hz).\n",
+                    " Reference and measured pipeline rates differ ({} Hz vs {} Hz).\n",
                     source_rate, sink_rate
                 ));
                 if let Some(c) = culprit {

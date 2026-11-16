@@ -374,11 +374,15 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         ));
     }
 
-    // Bit-Perfect Badge — vivid colored pill with background
+    // Verification Badge — vivid colored pill with background
     let badge_border_color;
     match &app.pipeline_status.verdict {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
-            let rate_str = format_sample_rate(app.pipeline_status.reference_rate());
+            let rate_str = if app.pipeline_status.reference_rate() > 0 {
+                format_sample_rate(app.pipeline_status.reference_rate())
+            } else {
+                "unknown".to_string()
+            };
             // Subtle pulse between two greens for a "live" feel
             let bg = if (app.tick_count / 10) % 2 == 0 {
                 Color::Rgb(0, 140, 60)
@@ -387,7 +391,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             };
             badge_border_color = app.theme.status_lossless;
             badge_spans.push(Span::styled(
-                format!(" ✓ BIT-PERFECT: {} ", rate_str),
+                format!(" ✓ VERIFIED: {} ", rate_str),
                 Style::default()
                     .fg(Color::White)
                     .bg(bg)
@@ -402,7 +406,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
             badge_border_color = app.theme.status_warning;
             badge_spans.push(Span::styled(
                 format!(
-                    " ⚠ RESAMPLED: {}→{} ",
+                    " ⚠ RATE MISMATCH: {}→{} ",
                     format_sample_rate(*source_rate),
                     format_sample_rate(*sink_rate)
                 ),
@@ -877,7 +881,7 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Format Spec Pills
     let codec_str = if app.stream_params.codec.is_empty() {
-        "FLAC"
+        "Not reported"
     } else {
         &app.stream_params.codec
     };
@@ -894,17 +898,22 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         Color::Rgb(100, 220, 255)
     };
+    let rate_str = if app.stream_params.sample_rate > 0 {
+        format_sample_rate(app.stream_params.sample_rate)
+    } else {
+        "Not reported".to_string()
+    };
     let rate_pill = Span::styled(
-        format!("[{}]", format_sample_rate(app.stream_params.sample_rate)),
+        format!("[{rate_str}]"),
         Style::default().fg(rate_color).add_modifier(Modifier::BOLD),
     );
 
-    let bit_depth_val = app.stream_params.bit_depth.unwrap_or(16);
+    let bit_depth_val = app.stream_params.bit_depth;
     let depth_str = app
         .stream_params
         .bit_depth
         .map(|b| format!("{}-bit", b))
-        .unwrap_or_else(|| "16-bit".to_string());
+        .unwrap_or_else(|| "Not reported".to_string());
     let depth_pill = Span::styled(
         format!("[{}]", depth_str),
         Style::default()
@@ -912,13 +921,14 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let bitrate_val = app.stream_params.bitrate_kbps.unwrap_or(0);
-    let bitrate_pill = Span::styled(
-        format!("[{}]", crate::util::format_bitrate(bitrate_val)),
-        Style::default().fg(Color::DarkGray),
-    );
+    let bitrate = app
+        .stream_params
+        .bitrate_kbps
+        .map(crate::util::format_bitrate)
+        .unwrap_or_else(|| "Not reported".to_string());
+    let bitrate_pill = Span::styled(format!("[{bitrate}]"), Style::default().fg(Color::DarkGray));
 
-    let quality_badge = if is_hi_res || bit_depth_val >= 24 {
+    let quality_badge = if is_hi_res || bit_depth_val.is_some_and(|depth| depth >= 24) {
         Some(Span::styled(
             "[HI-RES LOSSLESS]",
             Style::default()
@@ -1155,24 +1165,40 @@ fn render_now_playing(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.pipeline_status;
 
-    let src_rate = format_sample_rate(status.reference_rate());
-    let pw_rate = format_sample_rate(status.pw_sink_rate.unwrap_or(0));
-    let dac_rate = format_sample_rate(
-        status
-            .alsa_hw_params
-            .as_ref()
-            .and_then(|h| h.rate)
-            .unwrap_or(0),
-    );
+    let src_label = if status.media_sample_rate.is_some() {
+        "Catalog nominal"
+    } else {
+        "MPV observed"
+    };
+    let src_rate = if status.reference_rate() > 0 {
+        format!(
+            "{src_label}: {}",
+            format_sample_rate(status.reference_rate())
+        )
+    } else {
+        format!("{src_label}: not reported")
+    };
+    let pw_rate = status
+        .pw_sink_rate
+        .filter(|rate| *rate > 0)
+        .map(format_sample_rate)
+        .unwrap_or_else(|| "Not reported".to_string());
+    let dac_rate = status
+        .alsa_hw_params
+        .as_ref()
+        .and_then(|params| params.rate)
+        .filter(|rate| *rate > 0)
+        .map(format_sample_rate)
+        .unwrap_or_else(|| "Not reported".to_string());
     let dac_fmt = status
         .alsa_hw_params
         .as_ref()
         .and_then(|h| h.format.as_deref())
-        .unwrap_or("S24_3LE");
+        .unwrap_or("Not reported");
 
     let diagram_line = Line::from(vec![
         Span::styled(
-            format!(" [1] Source: {} ", src_rate),
+            format!(" [1] {} ", src_rate),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -1186,17 +1212,14 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(" ──▶ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!(" [3] USB DAC: {} ({}) ", dac_rate, dac_fmt),
+            format!(" [3] ALSA: {} ({}) ", dac_rate, dac_fmt),
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
 
-    let dac_name = status
-        .alsa_card_name
-        .as_deref()
-        .unwrap_or("USB DAC / ALSA Hardware");
+    let dac_name = status.alsa_card_name.as_deref().unwrap_or("Not detected");
 
     let mut lines = vec![
         diagram_line,
@@ -1246,19 +1269,19 @@ fn render_audio_path_diagram(f: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::raw(""));
         let (verdict_desc, verdict_color) = match &status.verdict {
             Some(BitPerfectVerdict::NativeBitPerfect) => (
-                "● Signal Integrity: 1:1 Direct Bit-Perfect. Native hardware clock locked, 0 DSP.",
+                "● Signal Integrity: measured rates and formats agree; no DSP or software attenuation reported.",
                 Color::Green,
             ),
             Some(BitPerfectVerdict::Resampled { .. }) => (
-                "▲ Signal Integrity: Audio resampled by PipeWire graph to match sink rate.",
+                "▲ Signal Integrity: a measured pipeline sample rate differs from the reference.",
                 Color::Yellow,
             ),
             Some(BitPerfectVerdict::VolumeDegraded { .. }) => (
-                "▲ Signal Integrity: Digital volume attenuation (<100%). Set hw vol to max for bit-perfect.",
+                "▲ Signal Integrity: MPV software volume is below unity; use hardware volume for level control.",
                 Color::Yellow,
             ),
             _ => (
-                "● Signal Status: ALSA kernel node active. Press '3' for full Inspector matrix.",
+                "● Signal Status: measurements incomplete or unavailable. Press '3' for details.",
                 Color::DarkGray,
             ),
         };
@@ -1674,7 +1697,7 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
         let preview_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Station Preview & Details ")
+            .title(" Station Preview & Catalog Claims ")
             .border_style(Style::default().fg(Color::Cyan));
 
         let inner = preview_block.inner(p_area);
@@ -1684,12 +1707,12 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let rate_str = if s.sample_rate > 0 {
                 format_sample_rate(s.sample_rate)
             } else {
-                "Lossless".to_string()
+                "Not specified".to_string()
             };
             let bit_str = if s.bit_depth > 0 {
                 format!("{}-bit", s.bit_depth)
             } else {
-                "16/24-bit".to_string()
+                "Not specified".to_string()
             };
             let tags_str = if s.tags.is_empty() {
                 "none".to_string()
@@ -1710,7 +1733,7 @@ fn render_search_tab(f: &mut Frame, app: &mut App, area: Rect) {
                 ]),
                 Line::raw(""),
                 Line::from(vec![
-                    Span::styled("🎵 Audio:    ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("🎵 Catalog:  ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!("[{}] ", s.codec),
                         Style::default()
@@ -1810,26 +1833,36 @@ fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
     let status = &app.pipeline_status;
     let (border_color, title_badge, title_style, desc_lines) = match &status.verdict {
         Some(BitPerfectVerdict::NativeBitPerfect) => {
-            let rate_str = format_sample_rate(status.reference_rate());
-            let pw_sink_rate_str = format_sample_rate(status.pw_sink_rate.unwrap_or_else(|| status.reference_rate()));
-            let dac_rate_str = format_sample_rate(status.alsa_hw_params.as_ref().and_then(|h| h.rate).unwrap_or_else(|| status.reference_rate()));
+            let reference_rate = format_sample_rate(status.reference_rate());
+            let pw_sink_rate = format_sample_rate(status.pw_sink_rate.unwrap_or_default());
+            let dac_rate = format_sample_rate(
+                status
+                    .alsa_hw_params
+                    .as_ref()
+                    .and_then(|params| params.rate)
+                    .unwrap_or_default(),
+            );
+            let reference_label = if status.media_sample_rate.is_some() {
+                "catalog nominal"
+            } else {
+                "observed MPV"
+            };
             (
                 Color::Green,
-                " [✓ DIRECT BIT-PERFECT PLAYBACK] ",
+                " [✓ VERIFIED NATIVE PATH] ",
                 Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                 vec![
                     Line::from(vec![
-                        Span::styled("SIGNAL PATH: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("Source (FLAC {})", rate_str), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::styled("RATES: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("Reference ({reference_label}, {reference_rate})"), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                         Span::styled(" ──▶ ", Style::default().fg(Color::Green)),
-                        Span::styled(format!("PipeWire ({})", pw_sink_rate_str), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                        Span::styled(format!("PipeWire ({pw_sink_rate})"), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
                         Span::styled(" ──▶ ", Style::default().fg(Color::Green)),
-                        Span::styled(format!("DAC ({})", dac_rate_str), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                        Span::styled(" [1:1 SYNC]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                        Span::styled(format!("ALSA ({dac_rate})"), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                     ]),
                     Line::from(vec![
-                        Span::styled("INTEGRITY:   ", Style::default().fg(Color::DarkGray)),
-                        Span::styled("Native clock locked. Zero software resampling, DSP equalizers, or bit degradation.", Style::default().fg(Color::White)),
+                        Span::styled("CHECKS: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("Required formats are reported; sample rates match. No DSP or software attenuation detected.", Style::default().fg(Color::White)),
                     ]),
                 ],
             )
@@ -1837,22 +1870,26 @@ fn render_inspector_verdict_banner(f: &mut Frame, app: &App, area: Rect) {
         Some(BitPerfectVerdict::Resampled { source_rate, sink_rate, culprit }) => {
             let src_str = format_sample_rate(*source_rate);
             let snk_str = format_sample_rate(*sink_rate);
+            let reference_label = if status.media_sample_rate.is_some() {
+                "Catalog nominal rate"
+            } else {
+                "Observed MPV rate"
+            };
             let culprit_str = culprit.as_ref().map(|c| format!(" (Locked by: {})", c.name)).unwrap_or_default();
             (
                 Color::Yellow,
-                " [⚠ RESAMPLING DETECTED] ",
+                " [⚠ RATE MISMATCH DETECTED] ",
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 vec![
                     Line::from(vec![
                         Span::styled("SIGNAL PATH: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("Source ({})", src_str), Style::default().fg(Color::Yellow)),
-                        Span::styled(" ──▶ [Resampling Filter] ──▶ ", Style::default().fg(Color::Red)),
-                        Span::styled(format!("DAC ({})", snk_str), Style::default().fg(Color::Yellow)),
-                        Span::styled(" [RATE MISMATCH]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        Span::styled(format!("{} ({})", reference_label, src_str), Style::default().fg(Color::Yellow)),
+                        Span::styled(" ──▶ [Rate mismatch] ──▶ ", Style::default().fg(Color::Red)),
+                        Span::styled(format!("Observed ({})", snk_str), Style::default().fg(Color::Yellow)),
                     ]),
                     Line::from(vec![
                         Span::styled("DIAGNOSIS:   ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("Stream sample rate ({}) is resampled to ({}) by PipeWire{}", src_str, snk_str, culprit_str), Style::default().fg(Color::White)),
+                        Span::styled(format!("A measured pipeline rate differs from the reference ({} vs {}){}", src_str, snk_str, culprit_str), Style::default().fg(Color::White)),
                     ]),
                 ],
             )
@@ -1959,21 +1996,30 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
 
     // Stage 1: Source (MPV Decoder)
     let codec = if status.source_codec.is_empty() {
-        "FLAC"
+        "Not reported"
     } else {
         &status.source_codec
     };
-    let sample_rate = format_sample_rate(status.reference_rate());
+    let (rate_label, sample_rate) = if let Some(catalog_rate) = status.media_sample_rate {
+        ("Catalog:", format_sample_rate(catalog_rate))
+    } else if status.source_rate > 0 {
+        ("MPV Rate:", format_sample_rate(status.source_rate))
+    } else {
+        ("Rate:", "Not reported".to_string())
+    };
     let bit_depth = status
         .source_bit_depth
         .map(|b| format!("{}-bit", b))
-        .unwrap_or_else(|| "16/24-bit".to_string());
+        .unwrap_or_else(|| "Not reported".to_string());
     let channels = if status.source_channels == 0 {
-        "2 (Stereo)".to_string()
+        "Not reported".to_string()
     } else {
         format!("{} ch", status.source_channels)
     };
-    let bitrate = crate::util::format_bitrate(status.source_bitrate_kbps.unwrap_or(0));
+    let bitrate = status
+        .source_bitrate_kbps
+        .map(crate::util::format_bitrate)
+        .unwrap_or_else(|| "Not reported".to_string());
     let vol_str = format!("{:.1}%", status.mpv_volume);
     let vol_style = if status.mpv_volume >= 99.5 {
         Style::default().fg(Color::Green)
@@ -1981,7 +2027,7 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::Yellow)
     };
 
-    let stage1_lines = vec![
+    let mut stage1_lines = vec![
         Line::from(vec![
             Span::styled("Codec:     ", Style::default().fg(Color::DarkGray)),
             Span::styled(
@@ -1992,7 +2038,10 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled("Rate:      ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{rate_label:<11}"),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(
                 sample_rate,
                 Style::default()
@@ -2024,11 +2073,21 @@ fn render_inspector_pipeline_stages(f: &mut Frame, app: &App, area: Rect) {
                 vol_style,
             ),
         ]),
-        Line::from(vec![
-            Span::styled("Stage 1:   ", Style::default().fg(Color::DarkGray)),
-            Span::styled("──▶ Direct Stream Out", Style::default().fg(Color::Green)),
-        ]),
     ];
+    if status.media_sample_rate.is_some() && status.source_rate > 0 {
+        stage1_lines.insert(
+            2,
+            Line::from(vec![
+                Span::styled("MPV Out:   ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format_sample_rate(status.source_rate),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+        );
+    }
 
     let stage1_block = Block::default()
         .borders(Borders::ALL)

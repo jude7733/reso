@@ -15,7 +15,6 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use config::ConfigManager;
 use error::{ResoError, Result};
-use events::AudioStreamParams;
 use inspector::status::PipelineStatus;
 use integration::api::ApiClient;
 use integration::clipboard::copy_to_clipboard;
@@ -491,7 +490,13 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
     let playback_session = get_playback_session(config_manager).await?;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     let snapshot = playback_session.snapshot().await;
-    let status = PipelineStatus::evaluate(&snapshot.audio_params, snapshot.mpv_volume, None);
+    let catalog_rate = snapshot
+        .current_station
+        .as_ref()
+        .map(|station| station.sample_rate)
+        .filter(|rate| *rate > 0);
+    let status =
+        PipelineStatus::evaluate(&snapshot.audio_params, snapshot.mpv_volume, catalog_rate);
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
@@ -521,16 +526,29 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
             println!("Last Error:        {error}");
         }
         println!(
-            "Source Codec:      {}",
+            "MPV Codec (observed): {}",
             if status.source_codec.is_empty() {
-                "FLAC (Lossless)"
+                "Not reported"
             } else {
                 &status.source_codec
             }
         );
+        if let Some(station) = &snapshot.current_station {
+            println!("Catalog Codec:        {} (nominal)", station.codec);
+            if station.sample_rate > 0 {
+                println!(
+                    "Catalog Rate:         {} (nominal)",
+                    format_sample_rate(station.sample_rate)
+                );
+            }
+        }
         println!(
-            "Sample Rate:       {}",
-            format_sample_rate(status.source_rate)
+            "MPV Output Rate:      {}",
+            if status.source_rate > 0 {
+                format_sample_rate(status.source_rate)
+            } else {
+                "Not reported".to_string()
+            }
         );
         println!(
             "PipeWire Sink:     {}",
@@ -538,15 +556,19 @@ async fn handle_current_command(config_manager: &ConfigManager, as_json: bool) -
                 .pw_sink
                 .as_ref()
                 .map(|s| s.description.as_str())
-                .unwrap_or("Default Sink")
+                .unwrap_or("Not detected")
         );
         println!(
             "Sink Clock Rate:   {}",
-            format_sample_rate(status.pw_sink_rate.unwrap_or(0))
+            status
+                .pw_sink_rate
+                .filter(|rate| *rate > 0)
+                .map(format_sample_rate)
+                .unwrap_or_else(|| "Not reported".to_string())
         );
         println!(
             "Hardware DAC:      {}",
-            status.alsa_card_name.as_deref().unwrap_or("USB DAC")
+            status.alsa_card_name.as_deref().unwrap_or("Not detected")
         );
         println!(
             "Bit-Perfect Verdict: {:?}",
@@ -611,18 +633,17 @@ async fn handle_search_command(
 }
 
 /// Handles `reso inspect`.
-async fn handle_inspect_command(_config_manager: &ConfigManager, as_json: bool) -> Result<()> {
-    let status = PipelineStatus::evaluate(
-        &AudioStreamParams {
-            codec: "FLAC".to_string(),
-            sample_rate: 44100,
-            channels: 2,
-            bit_depth: Some(24),
-            bitrate_kbps: Some(920),
-        },
-        100.0,
-        Some(44100),
-    );
+async fn handle_inspect_command(config_manager: &ConfigManager, as_json: bool) -> Result<()> {
+    let playback_session = get_playback_session(config_manager).await?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let snapshot = playback_session.snapshot().await;
+    let catalog_rate = snapshot
+        .current_station
+        .as_ref()
+        .map(|station| station.sample_rate)
+        .filter(|rate| *rate > 0);
+    let status =
+        PipelineStatus::evaluate(&snapshot.audio_params, snapshot.mpv_volume, catalog_rate);
 
     if as_json {
         let json = serde_json::to_string_pretty(&status)?;
